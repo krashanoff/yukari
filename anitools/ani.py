@@ -4,12 +4,14 @@ AniList and AniChart wrapper functions
 
 import datetime as dt
 import requests
-
+from . import types
 
 query = '''
-query ($name: String) { # Define which variables will be used in the query (id)
-    Media (name: $name, type: ANIME) { # Insert our variables into the query arguments (id) (type: ANIME is hard-coded in the query)
-        name
+query ($name: String, $category: MediaType) {
+    Media (search: $name, type: $category) {
+        id
+        idMal
+        siteUrl
         title {
             romaji
             english
@@ -22,6 +24,8 @@ query ($name: String) { # Define which variables will be used in the query (id)
 ANILIST="https://graphql.anilist.co"
 ANICHART="https://image.anichart.net"
 
+SUPPORTED_MEDIATYPES = ['ANIME', 'MANGA']
+
 def seasonal_chart_url(date = dt.datetime.utcnow()):
     m = date.month
     if m >= 3 and m <= 5:
@@ -33,6 +37,17 @@ def seasonal_chart_url(date = dt.datetime.utcnow()):
     if m >= 12 and m <= 2:
         return ANICHART+"/i/Winter.jpg"
 
-# TODO
 async def search(cat = 'anime', name = 'naruto', limit = 1):
-    pass
+    cat = cat.upper()
+
+    if cat not in SUPPORTED_MEDIATYPES:
+        return None
+
+    variables = { 'name': name, 'category': cat }
+    response = requests.post(ANILIST, json={ 'query': query, 'variables': variables }).json()
+
+    try:
+        data = response['data']['Media']
+        return types.Media.from_json(data)
+    except:
+        return None

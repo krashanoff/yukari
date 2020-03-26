@@ -2,11 +2,12 @@ import os
 import datetime as dt
 import discord
 
+from anitools import ani
 import mgmt
-import mal
-import ani
 
 CMD_PREFIX="//"
+
+MEDIA_TYPES={'a': 'anime', 'm': 'manga'}
 
 ABOUT=r"""
 こんにちはー
@@ -106,17 +107,27 @@ async def process_input(guild, channel, author, prefix, args):
     elif prefix == 'd' and args is not None:
         await delete_mode(channel, args)
 
-    # search MAL or AniList
-    elif prefix == 's' and args is not None and len(args) > 1:
-        if args[0].upper() == 'MAL':
-            q = str(' ').join(args[1:])
-            r = mal.search(q)
-            await channel.send(str(r)[:1500])
-        elif args[0].upper() == 'AL':
-            pass # TODO: finish anilist queries
-            q = str(' ').join(args[1:])
-            r = await anilist.search_anime(q)
-            await channel.send(r)
+    # search MAL or AniList, defaulting to MAL.
+    elif prefix[0] == 's' and len(prefix) <= 2 and args is not None:
+        media_type = 'anime'
+
+        # search for manga only if explicitly specified.
+        if len(prefix) == 2:
+            if prefix[-1] not in MEDIA_TYPES:
+                await channel.send('invalid media type')
+                return
+            else:
+                media_type = MEDIA_TYPES[prefix[-1]]
+
+        # searches using AniList's API.
+        name = str(' ').join(args[1:])
+        search_result = await ani.search(media_type, name)
+
+        # uses AniList results by default.
+        if search_result is not None:
+            await channel.send(search_result)
+        else:
+            await channel.send('search failed!')
     
     # fetch seasonal chart
     elif prefix == 'c':
