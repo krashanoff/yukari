@@ -1,11 +1,15 @@
 import os
 import datetime as dt
+import asyncio
 import discord
 
 from anitools import ani
 import mgmt
+from stream import *
 
 CMD_PREFIX="//"
+OK_EMOJI="\U00002705"
+BAD_EMOJI="\U0000274C"
 
 MEDIA_TYPES={'a': 'anime', 'm': 'manga'}
 
@@ -48,6 +52,7 @@ These are mostly permissions. When you add the bot, it initially allows all user
 """
 
 client = discord.Client(max_messages=None)
+streams = {str: Stream}
 
 # fairly intricate routine used for deletion of messages.
 async def delete_mode(channel, args):
@@ -87,7 +92,11 @@ async def delete_mode(channel, args):
     await channel.send('Transaction completed successfully.')
 
 # process user command input
-async def process_input(guild, channel, author, prefix, args):
+async def process_input(guild = discord.Guild,
+                        channel = discord.TextChannel,
+                        author = discord.User,
+                        prefix = str,
+                        args = list):
     print('{0}\t{1}::{2}::{3}\t\t{4}({5})'.format(dt.datetime.utcnow(), guild, channel, author, prefix, args))
 
     if prefix == 'help' or prefix == 'h':
@@ -111,6 +120,8 @@ async def process_input(guild, channel, author, prefix, args):
     elif prefix[0] == 's' and len(prefix) <= 2 and args is not None:
         media_type = 'anime'
 
+        await channel.trigger_typing()
+
         # search for manga only if explicitly specified.
         if len(prefix) == 2:
             if prefix[-1] not in MEDIA_TYPES:
@@ -120,7 +131,7 @@ async def process_input(guild, channel, author, prefix, args):
                 media_type = MEDIA_TYPES[prefix[-1]]
 
         # searches using AniList's API.
-        name = str(' ').join(args[1:])
+        name = str(' ').join(args[0:])
         search_result = await ani.search(media_type, name)
 
         # uses AniList results by default.
@@ -162,6 +173,42 @@ async def on_message(message):
             args = None
 
         await process_input(guild, channel, author, cmd, args)
+
+# handles starting and stopping of stream chats.
+@client.event
+async def on_voice_state_update(author, before, after):
+    if before.channel is not after.channel:
+        return
+
+    guild = after.channel.guild
+    dest_chan = guild.system_channel
+    if dest_chan is None:
+        dest_chan = guild.text_channels[0]
+
+    # if they start streaming, then start tracking.
+    if not before.self_stream and after.self_stream:
+        m = await dest_chan.send('I noticed you\'re streaming! Do you want to turn on spoiler chat for this stream?')
+        await m.add_reaction(OK_EMOJI)
+        await m.add_reaction(BAD_EMOJI)
+
+        try:
+            react, user = await client.wait_for('reaction_add', timeout = 45, check = lambda r, u: u == author and (r.emoji in [OK_EMOJI, BAD_EMOJI]))
+        except asyncio.TimeoutError:
+            await dest_chan.send('No reaction detected. Bother me with \'//stream\' to turn it on if you want to turn it on later.')
+        else:
+            print(react, user)
+            if react.emoji == OK_EMOJI:
+                await dest_chan.send('Turning it on!')
+                # start monitoring the stream.
+                streams[author.id] = Stream.from_voice_state(author, after)
+            else:
+                await dest_chan.send('Okay, I won\'t.')
+
+    # otherwise, terminate the prior stream chat.
+    if before.self_stream and not after.self_stream:
+        if streams.pop(author.id) is not None:
+            streams.pop(author.id)
+            await dest_chan.send('Stopped monitoring your stream.')
 
 if __name__ == "__main__":
     try:
