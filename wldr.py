@@ -6,141 +6,139 @@ import logging
 import re
 import time
 
-from anitools import ani
 import mgmt
 from stream import *
 
 CMD_PREFIX="//"
+CMD_SEPARATOR="="
+PREVIEW_COUNT=5
+DATETIME_FMT="%m/%d/%y|%H:%M"
 MSG_LIMIT=1000
 
 REACTION_CMD={
                 'd': '\N{fire}',
                 'e': '\N{comet}'
-                #['l', 'log']: '\N{memo}'
              }
-
-MEDIA_TYPES={'a': 'anime', 'm': 'manga'}
-DATETIME_FMT=r"%m/%d/%y|%H:%M"
 
 ABOUT=r"""
 こんにちはー
 <@131994985682829312>が作ったボット、ウェルダーと申し上げます！
-もっと知りたかったら「**//h**」ってどこでも送って下さいね！
+もっと知りたかったら「**//help**」ってどこでも送って下さいね！
 """
 
 USAGE=r"**Still working on this. Bear with it**"
 
 logging.basicConfig(level=logging.INFO)
 client = discord.Client(max_messages=None)
-streams = {str: Stream}
+
+async def pretty_print_msg(message=discord.Message):
+    # TODO: Handle escaping content.
+    return f'{message.created_at}:\t{message.author}: {message.content}'
+
+# get a filtered history of the messages in accordance to a regular expression.
+# returns the message sent when searching and the list of results.
+async def filtered_hist(channel=discord.TextChannel,
+                        before=dt.datetime,
+                        after=dt.datetime,
+                        pred=lambda m: True):
+    status_message = await channel.send('Querying channel history...')
+    msgs = [m async for m in channel.history(limit=MSG_LIMIT, before=before, after=after) if pred(m)]
+    return (status_message, msgs)
+
+# interactive query mode.
+async def interactive_mode(channel=discord.TextChannel,
+                           author=discord.Member,
+                           from_time=dt.datetime.utcnow(),
+                           to_time=dt.datetime.utcnow(),
+                           search_exp=str):
+    m, msgs = await filtered_hist(channel, to_time, from_time, lambda m: re.search(search_exp, m.content))
+
+    # fail if no results.
+    if len(msgs) == 0:
+        await m.edit(content='No results found!', delete_after=5)
+        return
+
+    # handle preview of query.
+    count = len(msgs) if len(msgs) < PREVIEW_COUNT else PREVIEW_COUNT
+    msgs.reverse()
+    preview_text = str('\n').join([await pretty_print_msg(m) for m in msgs[:count]])[:1500]
+    await m.edit(content=f'Preview of results for query {from_time} - {to_time}, matching {search_exp}:\n```{preview_text}\n...```')
+
+    input_msg = await channel.send('What is your desired operation?')
+    await input_msg.add_reaction(REACTION_CMD['d'])
+    await input_msg.add_reaction(REACTION_CMD['e'])
+    try:
+        r = await client.wait_for('reaction_add', check=lambda r, u: r.message == input_msg, timeout=30)
+    except asyncio.TimeoutError:
+        await channel.send('No input detected.', delete_after=5)
+    else:
+        print(r, u)
+
+    await channel.delete_messages([m, input_msg])
 
 # command line supporting mass deletion, editing of
 # messages.
-async def command_mode(channel, args):
-    issue_time = dt.datetime.utcnow()
-    from_time = dt.datetime.utcnow()
-    to_time = dt.datetime.utcnow()
-    regexp1 = ".*"
-    regexp2 = None
-    action = None
+async def command_mode(operation = str, channel = discord.TextChannel, before=dt.datetime, after=dt.datetime, search_exp=str, replace_exp=None):
+    m, msgs = filtered_hist(channel, before, after, lambda m: re.search(search_exp, m.content))
+
+    # TODO
+    if operation == 'd' or operation == 'delete':
+        await m.edit(content='Deleting messsages.')
+    elif operation == 'e' or operation == 'edit':
+        await m.edit(content=f'Editing messages to match provided regexp: {replace_exp}')
+
+    await m.edit(content='Transaction completed successfully.', delete_after=5)
+
+# handles parsing of command and passing control to
+# command_mode.
+async def issue_cmd(guild = discord.Guild,
+                    channel = discord.TextChannel,
+                    author = discord.User,
+                    prefix = str,
+                    args = list):
+    print('{0}\t{1}::{2}::{3}\t\t{4}({5})'.format(dt.datetime.utcnow(), guild, channel, author, prefix, args))
+
+    if prefix == 'help':
+        await channel.send(USAGE)
+    elif prefix == 'about':
+        await channel.send(ABOUT)
+
+    if args is None:
+        await channel.send('The minimum arguments for a command are `\\from`.')
+        return
+
+    issue_time = dt.datetime.utcnow()       # timestamp for command
+    from_time = dt.datetime.utcnow()        # lower bound on date range
+    to_time = dt.datetime.utcnow()          # upper bound on date range
+    regexp1 = ".*"                          # search expr
+    regexp2 = None                          # replacement expr
 
     for a in args:
         try:
-            separator = a.find(':')
-            cmd = a[1:separator]
+            separator = a.find(CMD_SEPARATOR)
+            arg = a[1:separator]
             val = a[separator + 1:]
         except:
             await channel.send('Improperly structured argument.')
             return
 
-        if cmd == 'from':
+        if arg == 'from':
             from_time = dt.datetime.strptime(val, DATETIME_FMT)
-        elif cmd == 'to':
+        elif arg == 'to':
             to_time = dt.datetime.strptime(val, DATETIME_FMT)
-        elif cmd == 'r1':
+        elif arg == 'r1':
             regexp1 = val
-        elif cmd == 'r2':
+        elif arg == 'r2':
             regexp2 = val
-        elif cmd == 'a':
-            action = val
 
-    msgs = [m async for m in channel.history(limit=MSG_LIMIT, before=to_time, after=from_time) if re.match(regexp1, m.content)]
-    replace_complete = False if ((action == 'r' or action == 'replace') and regexp2 is None) else True
-
-    # handle previews query for incomplete replace or action.
-    if action is None or not replace_complete:
-        count = len(msgs) if len(msgs) < 3 else 3
-        preview_text = str('\n').join([m.content for m in msgs[:count]])
-        m1 = await channel.send(f'Query incomplete. Previewing results:\n{preview_text}')
-
-        if replace_complete:
-            m2 = await channel.send('Please provide a replacement regexp for your action.')
-            # TODO
-        else:
-            m2 = await channel.send('What is your desired operation?')
-            await m2.reaction_add(REACTION_CMD)
-
-    # we strike.
-    if action == 'd' or action == 'delete':
-        m = await channel.send('Deleting messsages.')
-    if action == 'e' or action == 'edit':
-        m = await channel.send('Editing messages in accordance to ')
-
-    m = await channel.send('Transaction completed successfully.')
-    time.sleep(5)
-    await m.delete()
-
-# process user command input
-async def process_input(guild = discord.Guild,
-                        channel = discord.TextChannel,
-                        author = discord.User,
-                        prefix = str,
-                        args = list):
-    print('{0}\t{1}::{2}::{3}\t\t{4}({5})'.format(dt.datetime.utcnow(), guild, channel, author, prefix, args))
-
-    if prefix == 'help' or prefix == 'h':
-        await channel.send(USAGE)
-
-    # delete messages
-    elif prefix == 'c' and args is not None:
-        await command_mode(channel, args)
-
-    # search MAL or AniList, defaulting to MAL.
-    elif prefix[0] == 's' and len(prefix) <= 2 and args is not None:
-        media_type = 'anime'
-
-        await channel.trigger_typing()
-
-        # search for manga only if explicitly specified.
-        if len(prefix) == 2:
-            if prefix[-1] not in MEDIA_TYPES:
-                await channel.send('invalid media type')
-                return
-            else:
-                media_type = MEDIA_TYPES[prefix[-1]]
-
-        # searches using AniList's API.
-        name = str(' ').join(args[0:])
-        search_result = await ani.search(media_type, name)
-
-        # uses AniList results by default.
-        if search_result is not None:
-            await channel.send(search_result)
-        else:
-            await channel.send('search failed!')
-    
-    # fetch seasonal chart
-    elif prefix == 'chart':
-        await channel.send(ani.seasonal_chart_url())
-        
-    elif prefix == 'about':
-        await channel.send(ABOUT)
+    if prefix == 'q' or prefix == 'query':
+        await interactive_mode(channel, author, from_time, to_time, regexp1)
     else:
-        await channel.send(u'ごめんね！その命令正しくありません')
+        await command_mode(prefix, channel, from_time, to_time, regexp1, regexp2)
 
 @client.event
 async def on_ready():
-    print(u'\"{0}\"としてログインしてきました。準備完了。'.format(client.user))
+    print(f'Successfully logged in as {client.user}.')
 
 @client.event
 async def on_message(message):
@@ -164,9 +162,9 @@ async def on_message(message):
             cmd = content[2:]
             args = None
 
-        await process_input(guild, channel, author, cmd, args)
+        await issue_cmd(guild, channel, author, cmd, args)
 
-"""
+"""TODO: Currently broken.
 # handles starting and stopping of stream chats.
 @client.event
 async def on_voice_state_update(author, before, after):
@@ -184,7 +182,6 @@ async def on_voice_state_update(author, before, after):
         await m.add_reaction(OK_EMOJI)
         await m.add_reaction(BAD_EMOJI)
 
-        # TODO: Currently broken.
         try:
             react, user = await client.wait_for('reaction_add', check=lambda r, u: True, timeout = 15)
             print(react, user)
