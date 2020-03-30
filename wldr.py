@@ -2,16 +2,25 @@ import os
 import datetime as dt
 import asyncio
 import discord
+import logging
+import re
+import time
 
 from anitools import ani
 import mgmt
 from stream import *
 
 CMD_PREFIX="//"
-OK_EMOJI="\U00002705"
-BAD_EMOJI="\U0000274C"
+MSG_LIMIT=1000
+
+REACTION_CMD={
+                'd': '\N{fire}',
+                'e': '\N{comet}'
+                #['l', 'log']: '\N{memo}'
+             }
 
 MEDIA_TYPES={'a': 'anime', 'm': 'manga'}
+DATETIME_FMT=r"%m/%d/%y|%H:%M"
 
 ABOUT=r"""
 こんにちはー
@@ -19,77 +28,67 @@ ABOUT=r"""
 もっと知りたかったら「**//h**」ってどこでも送って下さいね！
 """
 
-USAGE=r"""
-**Commands you'll probably want to use**
-```
-# NOTE: deletions of messages older than 14 days is
-# incredibly slow.
-# there is a limit on the number of messages you can
-# bulk delete, of 100.
-//d 1s                      # delete messages from 1 second ago
-//d 2m                      # delete messages from 2 minutes ago
-//d 3h                      # delete messages from 3 hours ago
-//d 4d                      # delete messages from 4 days ago
-//d 5w                      # delete messages from 5 weeks ago
+USAGE=r"**Still working on this. Bear with it**"
 
-//c                         # current seasonal AniChart
-
-//s {mal, ani} [SEARCH]     # search MyAnimeList or AniList for SEARCH.
-
-//about                     # about the bot.
-//help                      # this text.
-```
-**Commands that exist, but might not see use**
-These are mostly permissions. When you add the bot, it initially allows all users to use its commands.
-```
-# grant yourself or another user the ability to control this bot.
-# the server owner can only use this initially.
-//permg {me, @USER#TAG}
-
-# remove permissions from another user.
-//permr {me, @USER#TAG}
-```
-"""
-
+logging.basicConfig(level=logging.INFO)
 client = discord.Client(max_messages=None)
 streams = {str: Stream}
 
-# fairly intricate routine used for deletion of messages.
-async def delete_mode(channel, args):
-    try:
-        magnitude = float(args[0][:-1])
-    except:
-        magnitude = -1
+# command line supporting mass deletion, editing of
+# messages.
+async def command_mode(channel, args):
+    issue_time = dt.datetime.utcnow()
+    from_time = dt.datetime.utcnow()
+    to_time = dt.datetime.utcnow()
+    regexp1 = ".*"
+    regexp2 = None
+    action = None
 
-    if magnitude < 0:
-        await channel.send('Invalid time magnitude.')
-        return
+    for a in args:
+        try:
+            separator = a.find(':')
+            cmd = a[1:separator]
+            val = a[separator + 1:]
+        except:
+            await channel.send('Improperly structured argument.')
+            return
 
-    unit = args[0][-1]
+        if cmd == 'from':
+            from_time = dt.datetime.strptime(val, DATETIME_FMT)
+        elif cmd == 'to':
+            to_time = dt.datetime.strptime(val, DATETIME_FMT)
+        elif cmd == 'r1':
+            regexp1 = val
+        elif cmd == 'r2':
+            regexp2 = val
+        elif cmd == 'a':
+            action = val
 
-    # switch/case for time unit
-    if unit == 's':
-        delta = dt.timedelta(seconds=magnitude)
-    elif unit == 'm':
-        delta = dt.timedelta(minutes=magnitude)
-    elif unit == 'h':
-        delta = dt.timedelta(hours=magnitude)
-    elif unit == 'd':
-        delta = dt.timedelta(days=magnitude)
-    elif unit == 'w':
-        delta = dt.timedelta(weeks=magnitude)
+    msgs = [m async for m in channel.history(limit=MSG_LIMIT, before=to_time, after=from_time) if re.match(regexp1, m.content)]
+    replace_complete = False if ((action == 'r' or action == 'replace') and regexp2 is None) else True
 
-    if delta > dt.timedelta(weeks=52):
-        await channel.send('I cannot delete more than six month\'s worth of messages at once!')
-        return
+    # handle previews query for incomplete replace or action.
+    if action is None or not replace_complete:
+        count = len(msgs) if len(msgs) < 3 else 3
+        preview_text = str('\n').join([m.content for m in msgs[:count]])
+        m1 = await channel.send(f'Query incomplete. Previewing results:\n{preview_text}')
 
-    try:
-        await mgmt.delete_from(dt.datetime.utcnow() - delta, channel)
-    except:
-        await channel.send('Failed to delete messages!')
-        return
-    
-    await channel.send('Transaction completed successfully.')
+        if replace_complete:
+            m2 = await channel.send('Please provide a replacement regexp for your action.')
+            # TODO
+        else:
+            m2 = await channel.send('What is your desired operation?')
+            await m2.reaction_add(REACTION_CMD)
+
+    # we strike.
+    if action == 'd' or action == 'delete':
+        m = await channel.send('Deleting messsages.')
+    if action == 'e' or action == 'edit':
+        m = await channel.send('Editing messages in accordance to ')
+
+    m = await channel.send('Transaction completed successfully.')
+    time.sleep(5)
+    await m.delete()
 
 # process user command input
 async def process_input(guild = discord.Guild,
@@ -102,19 +101,9 @@ async def process_input(guild = discord.Guild,
     if prefix == 'help' or prefix == 'h':
         await channel.send(USAGE)
 
-    # grant perms
-    elif prefix == 'permg' and args is not None:
-        if args[0] == 'me' and author == guild.owner:
-            await mgmt.mod_perms(1, guild, author)
-            await channel.send(u'許可与えました。')
-
-    # revoke perms
-    elif prefix == 'permr':
-        await mgmt.mod_perms(0, guild, args[0])
-
     # delete messages
-    elif prefix == 'd' and args is not None:
-        await delete_mode(channel, args)
+    elif prefix == 'c' and args is not None:
+        await command_mode(channel, args)
 
     # search MAL or AniList, defaulting to MAL.
     elif prefix[0] == 's' and len(prefix) <= 2 and args is not None:
@@ -141,7 +130,7 @@ async def process_input(guild = discord.Guild,
             await channel.send('search failed!')
     
     # fetch seasonal chart
-    elif prefix == 'c':
+    elif prefix == 'chart':
         await channel.send(ani.seasonal_chart_url())
         
     elif prefix == 'about':
@@ -151,8 +140,7 @@ async def process_input(guild = discord.Guild,
 
 @client.event
 async def on_ready():
-    print(u'\"{0}\"としてログインしてきました。'.format(client.user))
-    print(u'現在、モニター中ギルド：{0}'.format(client.guilds))
+    print(u'\"{0}\"としてログインしてきました。準備完了。'.format(client.user))
 
 @client.event
 async def on_message(message):
@@ -160,6 +148,10 @@ async def on_message(message):
     channel = message.channel
     author = message.author
     content = str(message.content)
+
+    # if the author isn't an admin on the server, then don't let them use the bot.
+    if len([role for role in author.roles if role.permissions.administrator]) == 0:
+        return
 
     # parse command
     if content[:2] == CMD_PREFIX:
@@ -174,6 +166,7 @@ async def on_message(message):
 
         await process_input(guild, channel, author, cmd, args)
 
+"""
 # handles starting and stopping of stream chats.
 @client.event
 async def on_voice_state_update(author, before, after):
@@ -191,24 +184,29 @@ async def on_voice_state_update(author, before, after):
         await m.add_reaction(OK_EMOJI)
         await m.add_reaction(BAD_EMOJI)
 
+        # TODO: Currently broken.
         try:
-            react, user = await client.wait_for('reaction_add', timeout = 45, check = lambda r, u: u == author and (r.emoji in [OK_EMOJI, BAD_EMOJI]))
-        except asyncio.TimeoutError:
-            await dest_chan.send('No reaction detected. Bother me with \'//stream\' to turn it on if you want to turn it on later.')
-        else:
+            react, user = await client.wait_for('reaction_add', check=lambda r, u: True, timeout = 15)
             print(react, user)
+        except asyncio.TimeoutError:
+            await m.delete()
+            m = await dest_chan.send('No reaction detected. Bother me with \'//stream\' to turn it on if you want to turn it on later.')
+        else:
+            await react.message.delete()
             if react.emoji == OK_EMOJI:
                 await dest_chan.send('Turning it on!')
                 # start monitoring the stream.
                 streams[author.id] = Stream.from_voice_state(author, after)
             else:
                 await dest_chan.send('Okay, I won\'t.')
+            await m.delete()
 
     # otherwise, terminate the prior stream chat.
     if before.self_stream and not after.self_stream:
-        if streams.pop(author.id) is not None:
+        if streams.get(author.id) is not None:
             streams.pop(author.id)
-            await dest_chan.send('Stopped monitoring your stream.')
+            await dest_chan.send(f'Stopped monitoring <@{author.id}>\'s stream.')
+"""
 
 if __name__ == "__main__":
     try:
