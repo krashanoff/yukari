@@ -11,14 +11,11 @@ from stream import *
 
 CMD_PREFIX="//"
 CMD_SEPARATOR="="
-PREVIEW_COUNT=5
+PREVIEW_COUNT=10
 DATETIME_FMT="%m/%d/%y|%H:%M"
 MSG_LIMIT=1000
 
-REACTION_CMD={
-                'd': '\N{fire}',
-                'e': '\N{comet}'
-             }
+OPS=['d', 's']
 
 ABOUT=r"""
 こんにちはー
@@ -26,32 +23,34 @@ ABOUT=r"""
 もっと知りたかったら「**//help**」ってどこでも送って下さいね！
 """
 
-USAGE=r"**Still working on this. Bear with it**"
+USAGE=r"**Usage message unavailable.**"
 
 logging.basicConfig(level=logging.INFO)
 client = discord.Client(max_messages=None)
 
 async def pretty_print_msg(message=discord.Message):
-    # TODO: Handle escaping content.
-    return f'{message.created_at}:\t{message.author}: {message.content}'
+    return f'{message.author}@{message.created_at}: {message.content[:50]}...'
 
 # get a filtered history of the messages in accordance to a regular expression.
 # returns the message sent when searching and the list of results.
-async def filtered_hist(channel=discord.TextChannel,
-                        before=dt.datetime,
-                        after=dt.datetime,
-                        pred=lambda m: True):
+async def start_query(channel=discord.TextChannel,
+                      before=dt.datetime,
+                      after=dt.datetime,
+                      pred=lambda m: True):
     status_message = await channel.send('Querying channel history...')
     msgs = [m async for m in channel.history(limit=MSG_LIMIT, before=before, after=after) if pred(m)]
     return (status_message, msgs)
 
-# interactive query mode.
-async def interactive_mode(channel=discord.TextChannel,
-                           author=discord.Member,
-                           from_time=dt.datetime.utcnow(),
-                           to_time=dt.datetime.utcnow(),
-                           search_exp=str):
-    m, msgs = await filtered_hist(channel, to_time, from_time, lambda m: re.search(search_exp, m.content))
+# sed-like edit of messages within a query.
+async def sed_mode(operation=str,
+                       channel=discord.TextChannel,
+                       user=discord.User,
+                       before=dt.datetime,
+                       after=dt.datetime,
+                       authors=str,
+                       search_exp=str,
+                       replace_exp=None):
+    m, msgs = await start_query(channel, before, after, lambda m: re.search(search_exp, m.content))
 
     # fail if no results.
     if len(msgs) == 0:
@@ -59,33 +58,30 @@ async def interactive_mode(channel=discord.TextChannel,
         return
 
     # handle preview of query.
-    count = len(msgs) if len(msgs) < PREVIEW_COUNT else PREVIEW_COUNT
-    msgs.reverse()
-    preview_text = str('\n').join([await pretty_print_msg(m) for m in msgs[:count]])[:1500]
-    await m.edit(content=f'Preview of results for query {from_time} - {to_time}, matching {search_exp}:\n```{preview_text}\n...```')
+    if operation == 'q' or operation == 'query':
+        count = len(msgs) if len(msgs) < PREVIEW_COUNT else PREVIEW_COUNT
+        msgs.reverse()
+        preview_text = str('\n\n').join([await pretty_print_msg(m) for m in msgs[:count]])[:1500]
+        await m.edit(content=f'Preview of results for query [{after}, {before}], matching `{search_exp}`:\n```{preview_text}\n...```')
+        input_msg = await channel.send(f'What is your desired operation (from {OPS})?')
 
-    input_msg = await channel.send('What is your desired operation?')
-    await input_msg.add_reaction(REACTION_CMD['d'])
-    await input_msg.add_reaction(REACTION_CMD['e'])
-    try:
-        r = await client.wait_for('reaction_add', check=lambda r, u: r.message == input_msg, timeout=30)
-    except asyncio.TimeoutError:
-        await channel.send('No input detected.', delete_after=5)
-    else:
-        print(r, u)
+        try:
+            cmd_select = await client.wait_for('message', timeout=30, check=lambda m: m.author == user and m.content in OPS)
+        except asyncio.TimeoutError:
+            await m.edit(content='No input detected.', delete_after=5)
+            return
+        else:
+            operation = cmd_select.content
 
-    await channel.delete_messages([m, input_msg])
+        await channel.delete_messages([input_msg, cmd_select])
 
-# command line supporting mass deletion, editing of
-# messages.
-async def command_mode(operation = str, channel = discord.TextChannel, before=dt.datetime, after=dt.datetime, search_exp=str, replace_exp=None):
-    m, msgs = filtered_hist(channel, before, after, lambda m: re.search(search_exp, m.content))
-
-    # TODO
+    # execute the transaction.
     if operation == 'd' or operation == 'delete':
         await m.edit(content='Deleting messsages.')
-    elif operation == 'e' or operation == 'edit':
+        await mgmt.bulk_delete(channel, msgs)
+    elif operation == 's' or operation == 'replace':
         await m.edit(content=f'Editing messages to match provided regexp: {replace_exp}')
+        # TODO: replacement regex.
 
     await m.edit(content='Transaction completed successfully.', delete_after=5)
 
@@ -100,16 +96,17 @@ async def issue_cmd(guild = discord.Guild,
 
     if prefix == 'help':
         await channel.send(USAGE)
-    elif prefix == 'about':
+        return
+    if prefix == 'about':
         await channel.send(ABOUT)
-
+        return
     if args is None:
-        await channel.send('The minimum arguments for a command are `\\from`.')
+        await channel.send('Not enough arguments!')
         return
 
-    issue_time = dt.datetime.utcnow()       # timestamp for command
-    from_time = dt.datetime.utcnow()        # lower bound on date range
-    to_time = dt.datetime.utcnow()          # upper bound on date range
+    before = dt.datetime.utcnow()           # lower bound on date range
+    after = dt.datetime.utcnow()            # upper bound on date range
+    authors = ".*"                          # author name regexp
     regexp1 = ".*"                          # search expr
     regexp2 = None                          # replacement expr
 
@@ -122,19 +119,24 @@ async def issue_cmd(guild = discord.Guild,
             await channel.send('Improperly structured argument.')
             return
 
-        if arg == 'from':
-            from_time = dt.datetime.strptime(val, DATETIME_FMT)
-        elif arg == 'to':
-            to_time = dt.datetime.strptime(val, DATETIME_FMT)
+        if arg == 'before':
+            before = dt.datetime.strptime(val, DATETIME_FMT)
+        elif arg == 'after':
+            after = dt.datetime.strptime(val, DATETIME_FMT)
+        elif arg == 'author':
+            authors = val
         elif arg == 'r1':
             regexp1 = val
         elif arg == 'r2':
             regexp2 = val
-
-    if prefix == 'q' or prefix == 'query':
-        await interactive_mode(channel, author, from_time, to_time, regexp1)
-    else:
-        await command_mode(prefix, channel, from_time, to_time, regexp1, regexp2)
+    await sed_mode(prefix,
+                   channel,
+                   author,
+                   before,
+                   after,
+                   authors,
+                   regexp1,
+                   regexp2)
 
 @client.event
 async def on_ready():

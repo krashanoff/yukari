@@ -3,6 +3,6 @@
 To learn how to use the bot, simply type `//help` in a channel.
 
 ## Features
-* Powerful deletion tools akin to sed
-* Interactive mode
-* Regex
+* Interactive query mode
+* Strong regex matching
+* Powerful bulk deletion
