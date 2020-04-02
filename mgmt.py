@@ -1,27 +1,30 @@
 """mgmt
-Management tools. Perms, etc.
+Management tools.
 """
 
 import datetime as dt
 import discord
 
-# add/remove, guild, user.
-async def mod_perms(ar, guild, user):
-    if ar <= 0:
-        # TODO: remove perms
-        pass
-    else:
-        # TODO: add perms
-        pass
+# intelligently delete messages in bulk.
+async def bulk_delete(channel=discord.TextChannel, msgs=[discord.Message]):
+    if len(msgs) <= 0:
+        return
+    
+    if len(msgs) == 1:
+        await msgs[0].delete()
+        return
 
-# delete messages from a particular date onwards.
-async def delete_from(date, channel, filter = lambda message: message, limit = 200):
-    to_delete = [filter(m) async for m in channel.history(limit=limit, after=date)]
+    bulk_deletable = []
+    for m in msgs:
+        # can only bulk delete messages that are less than 14 days old.
+        if dt.datetime.utcnow() - m.created_at <= dt.timedelta(days=14):
+            bulk_deletable.append(m)
 
-    if dt.timedelta(days=14) <= (dt.datetime.utcnow() - date):
-        # if it is beyond 14 days, we have to delete one-by-one.
-        for m in to_delete:
+            # can delete at most 100 messages
+            if len(bulk_deletable) == 100:
+                await channel.delete_messages(bulk_deletable)
+                bulk_deletable.clear()
+        else:
             await m.delete()
-    else:
-        # otherwise, we are okay to delete in bulk.
-        await channel.delete_messages(to_delete)
+
+    await channel.delete_messages(bulk_deletable)
