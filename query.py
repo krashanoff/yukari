@@ -10,15 +10,16 @@ class Query:
                  before,
                  after,
                  author,
-                 search_exp):
+                 pred):
         self.channel = channel
         self.before = before
         self.after = after
         self.author = author
-        self.search_exp = search_exp
+        self.pred = pred
+        self.results = None
 
     def __repr__(self):
-        return f's({self.before}-{self.after}\t{self.search_exp})'
+        return f's({self.before}-{self.after}\t{self.pred})'
         
     @staticmethod
     def from_args(channel, args):
@@ -29,13 +30,14 @@ class Query:
 
         for a in args:
             try:
-                separator = a.find(CMD_SEPARATOR)
-                arg = a[1:separator]
+                separator = a.find('=')
+                arg = a[:separator]
                 val = a[separator + 1:]
             except:
                 return None
 
             if arg == 'before':
+                # TODO: Parse datetime in slightly more clean manner.
                 before = dt.datetime.strptime(val, DATETIME_FMT)
             elif arg == 'after':
                 after = dt.datetime.strptime(val, DATETIME_FMT)
@@ -48,7 +50,6 @@ class Query:
 
     # get a filtered history of the messages in accordance to a regular expression.
     # returns the message sent when searching and the list of results.
-    async def start_query(self):
-        status_message = await self.channel.send('Querying channel history...')
-        msgs = [m async for m in self.channel.history(limit=MSG_LIMIT, before=before, after=after) if pred(m)]
-        return (status_message, msgs)
+    async def run(self):
+        msgs = [m async for m in self.channel.history(limit=MSG_LIMIT, before=self.before, after=self.after) if self.pred(m)]
+        return msgs

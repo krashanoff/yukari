@@ -45,10 +45,24 @@ def is_admin():
 async def about(ctx):
     await ctx.channel.send(ABOUT, delete_after=30)
 
+@cli.command(name='q')
+@is_admin()
+async def query(ctx, *args):
+    q = Query.from_args(ctx.channel, args)
+    if q is None:
+        await ctx.channel.send('Bad query structure!', delete_after=5)
+        return
+
+    status_message = await ctx.channel.send('Querying channel history...')
+    if q.run():
+        await status_message.edit(content=q.results, delete_after=30)
+    else:
+        await status_message.edit(content='Query failed!', delete_after=5)
+
 @cli.command(name='s')
 @is_admin()
-async def sed(ctx: commands.Context, *args):
-    await ctx.channel.send(Query.from_args(args))
+async def sed(ctx, *args):
+    await ctx.channel.send(Query.from_args(ctx.channel, args))
 
 # sed-like edit of messages within a query.
 async def sed_mode(operation=str,
