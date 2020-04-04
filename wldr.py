@@ -2,18 +2,18 @@ import os
 import datetime as dt
 import asyncio
 import discord
+from discord.ext import commands
 import logging
 import re
 import time
 
 import mgmt
 from stream import *
+from query import *
 
 CMD_PREFIX="//"
 CMD_SEPARATOR="="
 PREVIEW_COUNT=10
-DATETIME_FMT="%m/%d/%y|%H:%M"
-MSG_LIMIT=1000
 
 OPS=['d', 's']
 
@@ -26,20 +26,29 @@ ABOUT=r"""
 USAGE=r"**Usage message unavailable.**"
 
 logging.basicConfig(level=logging.INFO)
-client = discord.Client(max_messages=None)
+cli = commands.Bot(command_prefix=CMD_PREFIX)
 
 async def pretty_print_msg(message=discord.Message):
     return f'{message.author}@{message.created_at}: {message.content[:50]}...'
 
-# get a filtered history of the messages in accordance to a regular expression.
-# returns the message sent when searching and the list of results.
-async def start_query(channel=discord.TextChannel,
-                      before=dt.datetime,
-                      after=dt.datetime,
-                      pred=lambda m: True):
-    status_message = await channel.send('Querying channel history...')
-    msgs = [m async for m in channel.history(limit=MSG_LIMIT, before=before, after=after) if pred(m)]
-    return (status_message, msgs)
+@cli.event
+async def on_ready():
+    print(f'Successfully logged in as {cli.user}.')
+
+# quick check for admin perms.
+def is_admin():
+    async def pred(ctx):
+        return len([role for role in ctx.author.roles if role.permissions.administrator]) != 0
+    return commands.check(pred)
+
+@cli.command()
+async def about(ctx):
+    await ctx.channel.send(ABOUT, delete_after=30)
+
+@cli.command(name='s')
+@is_admin()
+async def sed(ctx: commands.Context, *args):
+    await ctx.channel.send(Query.from_args(args))
 
 # sed-like edit of messages within a query.
 async def sed_mode(operation=str,
@@ -50,7 +59,10 @@ async def sed_mode(operation=str,
                        authors=str,
                        search_exp=str,
                        replace_exp=None):
-    m, msgs = await start_query(channel, before, after, lambda m: re.search(search_exp, m.content))
+    m, msgs = await start_query(channel,
+                                before,
+                                after,
+                                lambda m: re.search(search_exp, m.content) and re.match(authors, str(m.author)))
 
     # fail if no results.
     if len(msgs) == 0:
@@ -66,8 +78,9 @@ async def sed_mode(operation=str,
         input_msg = await channel.send(f'What is your desired operation (from {OPS})?')
 
         try:
-            cmd_select = await client.wait_for('message', timeout=30, check=lambda m: m.author == user and m.content in OPS)
+            cmd_select = await cli.wait_for('message', timeout=30, check=lambda m: m.author == user and m.content in OPS)
         except asyncio.TimeoutError:
+            await input_msg.delete()
             await m.edit(content='No input detected.', delete_after=5)
             return
         else:
@@ -79,92 +92,23 @@ async def sed_mode(operation=str,
     if operation == 'd' or operation == 'delete':
         await m.edit(content='Deleting messsages.')
         await mgmt.bulk_delete(channel, msgs)
+
     elif operation == 's' or operation == 'replace':
+        # handle replacement.
+        if replace_exp is None:
+            input_msg = await channel.send(f'What is your replacement regex? For reference, your search expression is: \"{search_exp}\"')
+            try:
+                search_exp = await cli.wait_for('message', timeout=30, check=lambda m: m.author == user)
+            except asyncio.TimeoutError:
+                m.edit(content='No input detected.', delete_after=5)
+                return
+            else:
+                search_exp = str(search_exp.content)
+
         await m.edit(content=f'Editing messages to match provided regexp: {replace_exp}')
-        # TODO: replacement regex.
+        # TODO: replacement.
 
     await m.edit(content='Transaction completed successfully.', delete_after=5)
-
-# handles parsing of command and passing control to
-# command_mode.
-async def issue_cmd(guild = discord.Guild,
-                    channel = discord.TextChannel,
-                    author = discord.User,
-                    prefix = str,
-                    args = list):
-    print('{0}\t{1}::{2}::{3}\t\t{4}({5})'.format(dt.datetime.utcnow(), guild, channel, author, prefix, args))
-
-    if prefix == 'help':
-        await channel.send(USAGE)
-        return
-    if prefix == 'about':
-        await channel.send(ABOUT)
-        return
-    if args is None:
-        await channel.send('Not enough arguments!')
-        return
-
-    before = dt.datetime.utcnow()           # lower bound on date range
-    after = dt.datetime.utcnow()            # upper bound on date range
-    authors = ".*"                          # author name regexp
-    regexp1 = ".*"                          # search expr
-    regexp2 = None                          # replacement expr
-
-    for a in args:
-        try:
-            separator = a.find(CMD_SEPARATOR)
-            arg = a[1:separator]
-            val = a[separator + 1:]
-        except:
-            await channel.send('Improperly structured argument.')
-            return
-
-        if arg == 'before':
-            before = dt.datetime.strptime(val, DATETIME_FMT)
-        elif arg == 'after':
-            after = dt.datetime.strptime(val, DATETIME_FMT)
-        elif arg == 'author':
-            authors = val
-        elif arg == 'r1':
-            regexp1 = val
-        elif arg == 'r2':
-            regexp2 = val
-    await sed_mode(prefix,
-                   channel,
-                   author,
-                   before,
-                   after,
-                   authors,
-                   regexp1,
-                   regexp2)
-
-@client.event
-async def on_ready():
-    print(f'Successfully logged in as {client.user}.')
-
-@client.event
-async def on_message(message):
-    guild = message.guild
-    channel = message.channel
-    author = message.author
-    content = str(message.content)
-
-    # if the author isn't an admin on the server, then don't let them use the bot.
-    if len([role for role in author.roles if role.permissions.administrator]) == 0:
-        return
-
-    # parse command
-    if content[:2] == CMD_PREFIX:
-        try:
-            arg_start = content.index(' ')
-            cmd = content[2:arg_start]
-            args = content[arg_start + 1:].split(' ')
-        except:
-            arg_start = None
-            cmd = content[2:]
-            args = None
-
-        await issue_cmd(guild, channel, author, cmd, args)
 
 """TODO: Currently broken.
 # handles starting and stopping of stream chats.
@@ -209,6 +153,6 @@ async def on_voice_state_update(author, before, after):
 
 if __name__ == "__main__":
     try:
-        client.run(os.environ.get('TOKEN'))
+        cli.run(os.environ.get('TOKEN'))
     except:
         print('$TOKEN variable not set')
