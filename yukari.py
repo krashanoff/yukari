@@ -20,19 +20,16 @@ All the constants and config.
 """
 
 CMD_PREFIX="~"
+STARTUP_STATUS="with fire"
 
 TMPMSG_DEFAULT=30
 
-PREVIEW_COUNT=10
-MSG_LIMIT=2000
-DATETIME_FMT="%m/%d|%H:%M"
-
-STARTUP_STATUS="with fire"
+MSG_LIMIT=10                    # tight limit at the moment since incomplete feature.
 
 OK_EMOJI="\U00002705"
 NO_EMOJI="\U0000274C"
 REPEAT_EMOJI="\U0001F501"
-INPUT=[OK_EMOJI, NO_EMOJI, REPEAT_EMOJI]
+INPUT={OK_EMOJI, NO_EMOJI, REPEAT_EMOJI}
 
 ABOUT=f"""
 レオの長女、紫と申し上げます。
@@ -119,16 +116,32 @@ async def otp(ctx, channel: typing.Optional[discord.TextChannel], reason: typing
     invite = await (channel or ctx.guild.system_channel).create_invite(max_age=0, max_uses=1, reason=reason or f"{ctx.author} asked for a one-time-use invite.")
     await status.edit(content=f"Here's your invite:\n{invite.url}")
 
-# bulk deletion menu
-@cli.command(name="d", help="Delete messages.")
+# destroy an invite
+@cli.command(help="Destroy an invite")
+@is_leo()
+async def rmotp(ctx, inv: discord.Invite, reason: typing.Optional[str]):
+    status = await ctx.send(f"Deleting invite id {inv.id}")
+    await inv.delete()
+    await status.edit(content=f"Deleted invite id {inv.id}.", delete_after=TMPMSG_DEFAULT)
+
+# bulk deletion tool
+@cli.command(name="d", help="Delete messages")
 @is_admin()
 async def delete(ctx, *args):
     status = await ctx.send("Standby...")
     
-    channel = ctx.channel
+    channels = [ctx.channel]
+    before   = None
+    after    = None
 
     while True:
         msg = "Welcome to the bulk-deletion tool.\n"
+        if channels != [ctx.channel]:
+            msg += f"Channels: {[ c.name for c in channels ]}\n"
+        if before:
+            msg += f"Before: {before}\n"
+        if after:
+            msg += f"After: {after}\n"
         msg += f"React with {OK_EMOJI} to execute, {NO_EMOJI} to cancel.\n"
 
         await status.edit(content=msg)
@@ -138,7 +151,7 @@ async def delete(ctx, *args):
         try:
             r, _ = await cli.wait_for("reaction_add",
                                       timeout=TMPMSG_DEFAULT,
-                                      check=lambda r, u: u == ctx.author and r.emoji == (NO_EMOJI or OK_EMOJI))
+                                      check=lambda r, u: u == ctx.author and r.emoji in INPUT)
         except asyncio.TimeoutError:
             await status.edit(content="Aborted!", delete_after=TMPMSG_DEFAULT)
             return
@@ -150,15 +163,24 @@ async def delete(ctx, *args):
                 await status.edit(content="Aborted!", delete_after=TMPMSG_DEFAULT)
                 return
 
-    history = channel.history(limit=MSG_LIMIT)
-    tasks = []
-    while history:
-        tasks.append(history.pop().delete())
-    
-    for t in tasks:
-        await t
+    for c in channels:
+        await status.edit(content=f"Deleting messages found in {c.name}")
 
-    await status.edit(content="Done!")
+        history = [ m async for m in c.history(limit=MSG_LIMIT) if m.id != status.id ]
+        tasks = [ asyncio.gather(*[m.delete() for m in history[i:i+100]]) for i in range(0, len(history), 100) ]
+        count = len(tasks)
+
+        await status.edit(content=f"Found {count} batches of ~100 messages. Executing.")
+        for i, t in enumerate(tasks):
+            await t
+            await status.edit(content=f"Completed batch {i+1}/{count}.")
+
+        await status.edit(content=f"Done.")
+
+    await status.edit(content="Transaction completed successfully.", delete_after=TMPMSG_DEFAULT)
 
 if __name__ == "__main__":
-    cli.run(os.environ.get("TOKEN"))
+    try:
+        cli.run(os.environ.get("TOKEN"))
+    except AttributeError:
+        print("An environment variable is not set.")
