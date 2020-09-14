@@ -3,13 +3,16 @@
 # yukari
 #
 
-import os
-import datetime as dt
 import asyncio
+import datetime as dt
 import logging
+import os
 import re
 import time
 import typing
+
+import random
+random.seed()
 
 import discord
 from discord.ext import commands
@@ -20,7 +23,10 @@ All the constants and config.
 """
 
 CMD_PREFIX="~"
-STARTUP_STATUS="with fire"
+STARTUP_STATUS=[    # dangerous activities
+    "with fire",
+    "with snakes"
+]
 
 TMPMSG_DEFAULT=30
 
@@ -55,7 +61,8 @@ Events
 @cli.event
 async def on_ready():
     print(f"Successfully logged in as {cli.user}.")
-    await cli.change_presence(status=discord.Status.online, activity=discord.Game(name=STARTUP_STATUS))
+    await cli.change_presence(status=discord.Status.online,
+                              activity=discord.Game(name=STARTUP_STATUS[int(random.randint(0, len(STARTUP_STATUS) - 1))]))
 
 
 """
@@ -79,7 +86,7 @@ async def whoami(ctx):
 # set bot status
 @cli.command(help="Set the bot status")
 @is_leo()
-async def status(ctx, status: str):
+async def status(ctx, *, status: str):
     await cli.change_presence(status=discord.Status.online, activity=discord.Game(name=status))
     await ctx.send("Updated status.", delete_after=TMPMSG_DEFAULT)
 
@@ -104,14 +111,14 @@ async def say(ctx, chan: typing.Optional[discord.TextChannel], user: typing.Opti
 # keep a conversation
 @cli.command(help="Start a conversation with someone on behalf of the bot")
 @is_leo()
-async def convo(ctx, user: typing.Optional[discord.User], initial_msg: typing.Optional[str]):
+async def convo(ctx, user: typing.Optional[discord.User], *, initial_msg: str):
     portal = await ctx.send("```\nOpening the portal...\n```")
     await portal.edit("Just kidding, Leo hasn't implemented this yet.", delete_after=TMPMSG_DEFAULT)
 
 # one-time use invite
 @cli.command(help="Generate a one-time use invite to the system messages channel")
 @is_leo()
-async def otp(ctx, channel: typing.Optional[discord.TextChannel], reason: typing.Optional[str]):
+async def otp(ctx, channel: typing.Optional[discord.TextChannel], *, reason: str):
     status = await ctx.send(f"Creating an invite for you...")
     invite = await (channel or ctx.guild.system_channel).create_invite(max_age=0, max_uses=1, reason=reason or f"{ctx.author} asked for a one-time-use invite.")
     await status.edit(content=f"Here's your invite:\n{invite.url}")
@@ -119,7 +126,7 @@ async def otp(ctx, channel: typing.Optional[discord.TextChannel], reason: typing
 # destroy an invite
 @cli.command(help="Destroy an invite")
 @is_leo()
-async def rmotp(ctx, inv: discord.Invite, reason: typing.Optional[str]):
+async def rmotp(ctx, inv: discord.Invite, *, reason: str):
     status = await ctx.send(f"Deleting invite id {inv.id}")
     await inv.delete()
     await status.edit(content=f"Deleted invite id {inv.id}.", delete_after=TMPMSG_DEFAULT)
