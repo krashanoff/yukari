@@ -26,7 +26,8 @@ All the constants and config.
 CMD_PREFIX="~"
 STARTUP_STATUS=[    # dangerous activities
     "with fire",
-    "with snakes"
+    "with snakes",
+    "LEGO:tm:: Ninjago with dad"
 ]
 
 TMPMSG_DEFAULT=30
@@ -189,7 +190,9 @@ async def delete(ctx, *args):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT") or 8080)
-    socket.socket(socket.AF_INET, socket.SOCK_STREAM).bind(("", port))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("", port))
+    sock.listen(1)
     print(f"Bound to port {port}")
 
     try:
