@@ -8,6 +8,7 @@ import datetime as dt
 import logging
 import os
 import re
+import socket
 import time
 import typing
 
@@ -187,6 +188,10 @@ async def delete(ctx, *args):
     await status.edit(content="Transaction completed successfully.", delete_after=TMPMSG_DEFAULT)
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT") or 8080)
+    socket.socket(socket.AF_INET, socket.SOCK_STREAM).bind(("", port))
+    print(f"Bound to port {port}")
+
     try:
         cli.run(os.environ.get("TOKEN"))
     except AttributeError:
