@@ -1,8 +1,10 @@
-# welder - a fun experiment
+# 紫
 
-To learn how to use the bot, simply type `//help` in a channel.
+A bot for my servers. Evolves with the times.
 
 ## Features
-* Interactive query mode
-* Strong regex matching
-* Powerful bulk deletion
+* Interactive message history query mode
+* Concerningly fast bulk deletion
+* Unprofessional personality
+* anime profile picture
+* hardcoded unicode points?????
