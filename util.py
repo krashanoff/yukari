@@ -1,3 +1,4 @@
+import re
 import asyncio
 import typing
 import discord
@@ -28,6 +29,15 @@ class Util(commands.Cog):
         await inv.delete()
         await ctx.message.delete(delay=TMPMSG_DEFAULT)
         await status.edit(content=f"{ctx.author.mention} deleted invite **{inv.id}**.", delete_after=TMPMSG_DEFAULT)
+    
+    @commands.command(help="Count messages matching a regex")
+    async def count(self, ctx, *, pattern: typing.Optional[str]):
+        status = await ctx.send(f"Counting messages in this channel matching pattern `{pattern}`...")
+        count = 0
+        async for m in ctx.history():
+            if re.search(pattern or ".*", m.content):
+                count += 1
+        await status.edit(content=f"Found {count} messages matching your query.")
 
     # bulk deletion tool
     @commands.command(name="d", help="Delete messages")
