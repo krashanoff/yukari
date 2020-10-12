@@ -22,6 +22,7 @@ from constants import *
 
 from util import Util
 from bottools import BotTools
+from fun import Fun
 
 logging.basicConfig(level=logging.INFO)
 cli = commands.Bot(command_prefix=CMD_PREFIX)
@@ -35,6 +36,7 @@ async def on_ready():
 # cog setup
 cli.add_cog(Util(cli))
 cli.add_cog(BotTools(cli))
+cli.add_cog(Fun(cli))
 
 if __name__ == "__main__":
     # bind for Heroku

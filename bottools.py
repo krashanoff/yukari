@@ -44,8 +44,6 @@ class BotTools(commands.Cog):
                 await user.send(contents)
             except AttributeError:
                 await ctx.send(f"I couldn't send the DM to the user, sorry. (つ﹏<)･ﾟ｡", delete_after=TMPMSG_DEFAULT)
-            else:
-                await ctx.send(f"Something unexpected happened.", delete_after=TMPMSG_DEFAULT)
         else:
             await ctx.send(contents)
 
@@ -54,4 +52,5 @@ class BotTools(commands.Cog):
     @is_leo()
     async def convo(self, ctx, user: typing.Optional[discord.User], *, initial_msg: str):
         portal = await ctx.send("```\nOpening the portal...\n```")
-        await portal.edit("Just kidding, Leo hasn't implemented this yet.", delete_after=TMPMSG_DEFAULT)
+        msg = [ m.content async for m in (user.dm_channel or await user.create_dm()).history() ]
+        await portal.edit(content=f"Got some messages: {msg}", delete_after=TMPMSG_DEFAULT)

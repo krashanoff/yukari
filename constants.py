@@ -6,7 +6,7 @@ CMD_PREFIX="~"
 STARTUP_STATUS=[    # dangerous activities
     "with fire",
     "with snakes",
-    "LEGO:tm:: Ninjago with dad"
+    "LEGO™: Ninjago with dad"
 ]
 
 TMPMSG_DEFAULT=30

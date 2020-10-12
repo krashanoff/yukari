@@ -36,35 +36,44 @@ class Util(commands.Cog):
     async def count(self, ctx, chan: typing.Optional[discord.TextChannel], *, pattern: typing.Optional[str]):
         status = await ctx.send(f"Counting messages in {chan or ctx.channel} matching pattern `{pattern}`...")
         count = 0
-        async for m in (chan or ctx).history(limit=None):
+        async for m in (chan or ctx).history(limit=5000):
             if re.search(pattern or ".*", m.content):
                 count += 1
         await status.edit(content=f"Found {count} messages matching your query.")
 
-    # shuffle users among a category of voice channels
-    # TODO: opt-in shuffle
-    @commands.command(help="Shuffle users about a category")
-    @is_admin()
-    async def shuf(self, ctx, *, chan: discord.CategoryChannel):
-        status = await ctx.send(f"Okay, I'll shuffle users amongst {chan.name}.")
-        random.seed()
+    # list all users in a role
+    @commands.command(help="List all the users with a given (set of) role(s)")
+    async def lsrole(self, ctx, *, pattern: str):
+        status = await ctx.send(f"Gathering users")
+        users = []
+        for u in ctx.guild.members:
+            for r in u.roles:
+                if r.guild == ctx.guild and re.match(pattern, r.name):
+                    users.append(f"{u.name}#{u.discriminator}")
+                    break
+        found = len(users)
+        idx = 0
+        print(found)
+
         while True:
-            await status.edit(content="Waiting for your reaction...")
-            await status.add_reaction(OK_EMOJI)
-            await status.add_reaction(NO_EMOJI)
-            r, _ = await self.bot.wait_for("reaction_add", check=lambda r,u: u == ctx.author)
-            if r.emoji == NO_EMOJI:
+            print(idx)
+            preview = '\n'.join(users[idx:idx+10])
+            await status.edit(content=f"Here's entries {idx} through {idx+10}:\n{preview}")
+            await status.add_reaction("⬅️")
+            await status.add_reaction("➡️")
+            try:
+                r, _ = await self.bot.wait_for("reaction_add", check=lambda r, u: u == ctx.author and r.message.id == status.id, timeout=TMPMSG_DEFAULT)
+            except asyncio.TimeoutError:
                 break
-
-            await status.edit(content="Shuffling...")
-
-            # shuffle the lads
-            for m in [ m for c in chan.voice_channels for m in c.members ]:
-                await m.move_to(random.choice(chan.voice_channels))
-
-            await status.edit(content="Shuffled!")
-            await status.clear_reaction(OK_EMOJI)
-        await status.edit(content="Aborted.", delete_after=TMPMSG_DEFAULT)
+            else:
+                if r.emoji == "⬅️":
+                    idx -= 10
+                if r.emoji == "➡️":
+                    idx += 10
+                if idx >= found or idx <= 0:
+                    idx = 0
+                await status.clear_reaction("⬅️")
+                await status.clear_reaction("➡️")
 
     # bulk deletion tool
     @commands.command(name="d", help="Delete messages")
