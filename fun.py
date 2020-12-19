@@ -37,3 +37,30 @@ class Fun(commands.Cog):
             await status.edit(content="Shuffled!")
             await status.clear_reaction(OK_EMOJI)
         await status.edit(content="Aborted.", delete_after=TMPMSG_DEFAULT)
+    
+    @commands.command(help="Select randomly from a list of users, role, or voice channel.")
+    @is_admin()
+    async def pick(self,
+                   ctx,
+                   *,
+                   ref: typing.Optional[typing.Union[
+                       discord.CategoryChannel,
+                       discord.VoiceChannel,
+                       discord.Role,
+                       str]]):
+        
+        src = []
+        if type(ref) is discord.CategoryChannel:
+            src = [ v.members for v in ref.voice_channels ]
+        elif type(ref) is discord.VoiceChannel:
+            src = ref.members
+        elif type(ref) is discord.Role:
+            src = ref.members
+        
+        if type(ref) is str:
+            await ctx.send(f"Chose '{random.choice(ref.split(','))}'!", delete_after=TMPMSG_DEFAULT)
+        elif src:
+            await ctx.send(f"Chose {random.choice(src).mention}!", delete_after=TMPMSG_DEFAULT)
+        else:
+            await ctx.send(f"Improper input. Use a nonempty category name, voice channel, role, or CSV,list,of,strings.", delete_after=TMPMSG_DEFAULT)
+        
