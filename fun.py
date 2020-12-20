@@ -58,9 +58,9 @@ class Fun(commands.Cog):
             src = ref.members
         
         if type(ref) is str:
-            await ctx.send(f"Chose '{random.choice(ref.split(','))}'!", delete_after=TMPMSG_DEFAULT)
+            await ctx.send(f"Chose '{random.choice(ref.split(','))}'!")
         elif src:
-            await ctx.send(f"Chose {random.choice(src).mention}!", delete_after=TMPMSG_DEFAULT)
+            await ctx.send(f"Chose {random.choice(src).mention}!")
         else:
-            await ctx.send(f"Improper input. Use a nonempty category name, voice channel, role, or CSV,list,of,strings.", delete_after=TMPMSG_DEFAULT)
+            await ctx.send(f"Improper input. Use a nonempty category name, voice channel, role, or CSV,list,of,strings.")
         
