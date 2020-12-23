@@ -15,28 +15,51 @@ class Points(commands.Cog):
     
     @commands.command(help="Open points tracking for the server.")
     @is_admin()
-    async def points(self, ctx: commands.Context, chan: discord.TextChannel, kw: str):
+    async def points(self, ctx: commands.Context, chan: discord.TextChannel, amount: int, secret: str):
         if chan is None:
             await ctx.send(f"Invalid invocation: channel {chan} does not exist.", delete_after=TMPMSG_DEFAULT)
             return
 
-        await ctx.send(f"Listening for points with keyword '{kw}' in channel {chan}. Send `!!{kw}` close points.")
-        status = await chan.send(f"Tell me who you want to put your raffle votes in for! Send `!@{kw} Name #` to this channel.")
+        cups = self._sheet.row_values(1)
+        await ctx.send(f"\
+You have allowed people in {chan} to use up to {amount} tickets. \
+According to the spreadsheet, people can choose to put their tickets \
+in the following cups: {', '.join(cups)}.\n\n\
+Send `!!{secret}` to this channel to close points.")
+
+        # Get possible "cups".
+        await chan.send(f"Tell me whose cup you want to put your raffle \
+tickets in! Send `!@{secret} # Name` to this channel.\n\n\
+You each have **{amount} tickets** to put in any of the following cups (case-sensitive): {', '.join(cups)}.")
         
-        tallies=[]
+        # Collect deposits.
+        # TODO: Limit amount depositable.
+        tallies = { n: [] for n in cups }
         while True:
             m = await self.bot.wait_for("message", check=lambda m: (m.channel == chan or m.channel == ctx.channel) and m.content.startswith(("!@", "!!")))
-            if m.author == ctx.author and m.content == f"!!{kw}":
+            if m.author == ctx.author and m.channel == ctx.channel and m.content == f"!!{secret}":
                 break
-            tallies.append((m.author.name, m.content.split(' ')[1:]))
-            await chan.send(f"Recorded!")
+            arr = m.content.split(' ')
+            cup = ' '.join(arr[2:])
+            amt = int(arr[1])
 
-        await status.edit(content=f"Points have been collected! Recording now...")
-        for t in tallies:
-            try:
-                cell = self._sheet.find(t[0])
-                self._sheet.update_cell(cell.row, cell.col, t[1])
-            except:
-                self._sheet.update_cell(self._sheet.row_count, self._sheet.col_count, t[1])
-                
-        await chan.send(f"Stopped listening for points. Recorded {len(tallies)} tallies.")
+            if cup not in tallies:
+                await chan.send(f"{m.author.mention}, please use one of the following cups: {cups}")
+            else:
+                for _ in range(amt):
+                    tallies[cup].append(f"{m.author.name}#{m.author.discriminator}")
+                await chan.send(f"Recorded {m.author.mention}'s deposit of {amt} tickets for {cup}!")
+
+        # Write deposits.
+        # TODO: efficiency.
+        status = await chan.send(content=f"Collection period has ended! Writing results now...")
+        update = [ [] for _ in range(max([ len(tallies[k]) for k in tallies ])) ]
+        for i in range(len(update)):
+            for k in tallies:
+                if i < len(tallies[k]):
+                    update[i].append(tallies[k][i])
+                else:
+                    update[i].append("")
+        print(update)
+        self._sheet.append_rows(update)
+        await status.edit(content=f"Wrote {len(tallies)} valid tally records.")
