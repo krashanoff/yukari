@@ -1,9 +1,11 @@
 import re
 import asyncio
 import typing
+import random
+from io import StringIO
+
 import discord
 from discord.ext import commands
-import random
 
 from constants import *
 from perms import *
@@ -13,9 +15,33 @@ class Util(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
+    # the god command. evaluate python code.
+    @commands.command(help="Evaluate arbitrary Python code.")
+    @is_leo()
+    async def sudo(self, ctx, *, msg: str):
+        status = await ctx.send(f"Evaluating...")
+
+        out = StringIO("")
+        def contained_print(m):
+            print(m, file=out)
+
+        try:
+            eval(msg,
+            {
+                'g': ctx.guild,
+                'c': ctx.channel,
+                'print': contained_print,
+            })
+            await status.edit(content="Evaluated.", delete_after=TMPMSG_DEFAULT)
+            await ctx.send(f"Output:\n{out.getvalue() or 'Nothing'}")
+        except SyntaxError:
+            await ctx.send("Syntax error.")
+        except:
+            await ctx.send("Something very weird happened.")
+
     # one-time use invite
     @commands.command(help="Generate a one-time use invite to the system messages channel")
-    @is_leo()
+    @is_admin()
     async def otp(self, ctx, channel: typing.Optional[discord.TextChannel], *, reason: typing.Optional[str]):
         status = await ctx.send(f"Creating an invite for you...")
         invite = await (channel or ctx.guild.system_channel).create_invite(max_age=0, max_uses=1, reason=reason or f"{ctx.author} asked for a one-time-use invite.")
@@ -24,25 +50,16 @@ class Util(commands.Cog):
 
     # destroy an invite
     @commands.command(help="Destroy an invite")
-    @is_leo()
+    @is_admin()
     async def rmotp(self, ctx, inv: discord.Invite, *, reason: typing.Optional[str]):
         status = await ctx.send(f"Deleting invite id {inv.id}")
         await inv.delete()
         await ctx.message.delete(delay=TMPMSG_DEFAULT)
         await status.edit(content=f"{ctx.author.mention} deleted invite **{inv.id}**.", delete_after=TMPMSG_DEFAULT)
-    
-    # count messages
-    @commands.command(help="Count messages matching a regex")
-    async def count(self, ctx, chan: typing.Optional[discord.TextChannel], *, pattern: typing.Optional[str]):
-        status = await ctx.send(f"Counting messages in {chan or ctx.channel} matching pattern `{pattern}`...")
-        count = 0
-        async for m in (chan or ctx).history(limit=5000):
-            if re.search(pattern or ".*", m.content):
-                count += 1
-        await status.edit(content=f"Found {count} messages matching your query.")
 
     # list all users in a role
     @commands.command(help="List all the users with a given (set of) role(s)")
+    @is_admin()
     async def lsrole(self, ctx, *, pattern: str):
         status = await ctx.send(f"Gathering users")
         users = []
@@ -74,6 +91,23 @@ class Util(commands.Cog):
                     idx = 0
                 await status.clear_reaction("⬅️")
                 await status.clear_reaction("➡️")
+
+    # short info dump about a server
+    @commands.command(help="Info dump about the server")
+    @is_admin()
+    async def infoDump(self, ctx):
+        for c in ctx.guild.text_channels:
+            await ctx.send(f"[{c.position}] {c.category.name if c.category else ''}/{c.name}: {c.topic}")
+
+    # count messages
+    @commands.command(help="Count messages matching a regex")
+    async def count(self, ctx, chan: typing.Optional[discord.TextChannel], *, pattern: typing.Optional[str]):
+        status = await ctx.send(f"Counting messages in {chan or ctx.channel} matching pattern `{pattern}`...")
+        count = 0
+        async for m in (chan or ctx).history(limit=5000):
+            if re.search(pattern or ".*", m.content):
+                count += 1
+        await status.edit(content=f"Found {count} messages matching your query.")
 
     # bulk deletion tool
     @commands.command(name="d", help="Delete messages")
