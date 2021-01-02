@@ -2,6 +2,9 @@
 # simple points system for users.
 #
 
+import re
+from collections import defaultdict
+
 import discord
 from discord.ext import commands
 
@@ -34,11 +37,17 @@ You each have **{amount} tickets** to put in any of the following cups (case-sen
         
         # Collect deposits.
         # TODO: Limit amount depositable.
-        tallies = { n: [] for n in cups }
+        tallies = { name: [] for name in cups }
+        tallies_left = defaultdict(lambda: amount)
         while True:
-            m = await self.bot.wait_for("message", check=lambda m: (m.channel == chan or m.channel == ctx.channel) and m.content.startswith(("!@", "!!")))
+            m = await self.bot.wait_for("message", check=lambda m: m.channel in [chan, ctx.channel] and m.content.startswith(("!@", "!!")))
+
+            # Break the loop if the author stops collection.
             if m.author == ctx.author and m.channel == ctx.channel and m.content == f"!!{secret}":
                 break
+
+            # Otherwise, parse the content for vote information.
+            author = f"{m.author.name}#{m.author.discriminator}"
             arr = m.content.split(' ')
             cup = ' '.join(arr[2:])
             amt = int(arr[1])
@@ -46,9 +55,22 @@ You each have **{amount} tickets** to put in any of the following cups (case-sen
             if cup not in tallies:
                 await chan.send(f"{m.author.mention}, please use one of the following cups: {cups}")
             else:
-                for _ in range(amt):
-                    tallies[cup].append(f"{m.author.name}#{m.author.discriminator}")
-                await chan.send(f"Recorded {m.author.mention}'s deposit of {amt} tickets for {cup}!")
+                deposited = 0
+
+                # Check that the user has some tickets to spare.
+                if tallies_left[author] <= 0:
+                    await chan.send(f"{m.author.mention}: You have no tickets left to use!")
+                elif tallies_left[author] < amt:
+                    await chan.send(f"{m.author.mention}: You only had {tallies_left[author]} tickets left, so I will just put the rest in.")
+                    deposited = tallies_left[author]
+                    tallies_left[author] = 0
+                else:
+                    await chan.send(f"{m.author.mention}: Recorded your deposit of {amt} tickets for {cup}.")
+                    deposited = amt
+                    tallies_left[author] -= amt
+
+                for _ in range(deposited):
+                    tallies[cup].append(author)
 
         # Write deposits.
         # TODO: efficiency.
@@ -62,4 +84,4 @@ You each have **{amount} tickets** to put in any of the following cups (case-sen
                     update[i].append("")
         print(update)
         self._sheet.append_rows(update)
-        await status.edit(content=f"Wrote {len(tallies)} valid tally records.")
+        await status.edit(content=f"Wrote tally records.")
