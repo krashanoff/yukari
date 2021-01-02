@@ -1,9 +1,9 @@
-# 紫
+# yukari
 
-A bot for my servers. Evolves with the times.
+haha turing complete js bot go brr
 
-## Features
-* Concerningly fast bulk deletion
-* Unprofessional personality
-* anime profile picture
-* hardcoded unicode points?????
+````
+eval ```js
+for (let [k,v] of ctx.guild.channels.cache) { if (v.name.match(/^a/)) donsole.log(v.name) }
+;```
+````

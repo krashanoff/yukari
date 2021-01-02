@@ -1,0 +1,39 @@
+{
+  "name": "yukari",
+  "version": "0.0.1",
+  "description": "A bot for my servers. Evolves with the times.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/yukari.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/krashanoff/yukari.git"
+  },
+  "author": "Leonid Krashanoff <krashanoff@ucla.edu>",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/krashanoff/yukari/issues"
+  },
+  "homepage": "https://github.com/krashanoff/yukari#readme",
+  "devDependencies": {
+    "eslint": "^7.17.0",
+    "eslint-config-prettier": "^7.1.0",
+    "husky": "^4.3.6",
+    "lint-staged": "^10.5.3",
+    "prettier": "^2.2.1"
+  },
+  "husky": {
+    "hooks": {
+      "pre-commit": "lint-staged"
+    }
+  },
+  "lint-staged": {
+    "*.{js,css,md}": "prettier --write"
+  },
+  "dependencies": {
+    "discord.js": "^12.5.1",
+    "dotenv": "^8.2.0"
+  }
+}

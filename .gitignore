@@ -1,6 +1,3 @@
-**/*.env
-**/__pycache__
-
-env/
-
+.env
 service_account.json
+node_modules
