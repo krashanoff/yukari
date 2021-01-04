@@ -45,6 +45,10 @@ You each have **{amount} tickets** to put in any of the following cups (case-sen
             # Break the loop if the author stops collection.
             if m.author == ctx.author and m.channel == ctx.channel and m.content == f"!!{secret}":
                 break
+                
+            # Ignore stop commands.
+            if m.content.startswith("!!"):
+                continue
 
             # Otherwise, parse the content for vote information.
             author = f"{m.author.name}#{m.author.discriminator}"
@@ -61,7 +65,7 @@ You each have **{amount} tickets** to put in any of the following cups (case-sen
                 if tallies_left[author] <= 0:
                     await chan.send(f"{m.author.mention}: You have no tickets left to use!")
                 elif tallies_left[author] < amt:
-                    await chan.send(f"{m.author.mention}: You only had {tallies_left[author]} tickets left, so I will just put the rest in.")
+                    await chan.send(f"{m.author.mention}: You only had {tallies_left[author]} ticket(s) left, so I will just put the rest in.")
                     deposited = tallies_left[author]
                     tallies_left[author] = 0
                 else:
