@@ -6,7 +6,10 @@ CMD_PREFIX="~"
 STARTUP_STATUS=[    # dangerous activities
     "with fire",
     "with snakes",
-    "LEGO™: Ninjago with dad"
+    "LEGO®: Ninjago with dad",
+    "Pokemon Emerald with JAC",
+    "chicken with supercars",
+    "LEGO®: Star Wars™",
 ]
 
 TMPMSG_DEFAULT=30
@@ -19,6 +22,6 @@ REPEAT_EMOJI="\U0001F501"
 INPUT={OK_EMOJI, NO_EMOJI, REPEAT_EMOJI}
 
 ABOUT=f"""
-レオの長女、紫と申し上げます。
+レオの長女、紫（ゆかり）と申し上げます。
 もっと知りたかったら、あたしのギットハブをチェックして下さい。
 """
