@@ -95,10 +95,13 @@ You each have **{amount} tickets** to put in any of the following cups (case-sen
                 continue
 
             # Otherwise, parse the content for vote information.
-            author = f"{m.author.name}#{m.author.discriminator}"
-            arr = m.content.split(' ')
-            cup = ' '.join(arr[2:])
-            amt = int(arr[1])
+            try:
+                author = f"{m.author.name}#{m.author.discriminator}"
+                arr = m.content.split(' ')
+                cup = ' '.join(arr[2:])
+                amt = int(arr[1])
+            except:
+                continue
 
             if cup not in tallies:
                 await chan.send(f"{m.author.mention}, please use one of the following cups: {cups}")
@@ -133,4 +136,4 @@ You each have **{amount} tickets** to put in any of the following cups (case-sen
         print(update)
         self._sheet.append_rows(update)
         await status.edit(content=f"**I have stopped listening for deposits. Your deposits have been recorded.**")
-        await chan.send(f"Stopped listening. Wrote back {len(update.values())} records.")
+        await chan.send(f"Stopped listening. Wrote back records.")
