@@ -6,6 +6,7 @@ from io import StringIO
 
 import discord
 from discord.ext import commands
+from discord.ext.commands.core import command
 
 from constants import *
 from perms import *
@@ -38,6 +39,25 @@ class Util(commands.Cog):
             await ctx.send("Syntax error.")
         except:
             await ctx.send("Something very weird happened.")
+
+    @commands.command(help="Temporarily forward DMs to another channel.")
+    @is_admin()
+    async def fwd(self, ctx: commands.Context, chan: discord.TextChannel):
+        await ctx.send(f"Forwarding DMs to {chan.name}. Send `!@stop` to stop.")
+        while True:
+            m = await self.bot.wait_for("message", check=lambda m: not m.guild or m.author == ctx.author)
+            if m.author == ctx.author and m.content == "!@stop":
+                break
+            await chan.send(f"{m.author.name} sent: {m.content}")
+    
+    # x-post something to another channel.
+    @commands.command(help="Crosspost the given message to some other channel.")
+    @is_officer()
+    async def pin_it(self, ctx: commands.Context, id: typing.Optional[str]):
+        if not msg:
+            msg = (await ctx.channel.history(limit=1).flatten())[0]
+        else:
+            msg = await ctx.fetch_message(id)
 
     # one-time use invite
     @commands.command(help="Generate a one-time use invite to the system messages channel")
