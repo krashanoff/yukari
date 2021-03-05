@@ -48,7 +48,7 @@ class Util(commands.Cog):
             m = await self.bot.wait_for("message", check=lambda m: not m.guild or m.author == ctx.author)
             if m.author == ctx.author and m.content == "!@stop":
                 break
-            await chan.send(f"{m.author.name} sent: {m.content}")
+            await chan.send(f"```\n{m.author.name}:\n{m.content[:1500]}\n```")
     
     # x-post something to another channel.
     @commands.command(help="Crosspost the given message to some other channel.")
