@@ -3,19 +3,14 @@
 # yukari
 #
 
-import asyncio
-import datetime as dt
 import logging
 import os
-import re
-import socket
-import time
-import typing
 
 import random
 
 random.seed()
 
+from rich import print
 import discord
 from discord.ext import commands
 import gspread

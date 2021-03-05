@@ -1,8 +1,12 @@
 import re
 import asyncio
+from sys import flags
 import typing
 import random
 from io import StringIO
+from datetime import datetime
+
+from rich import inspect
 
 import discord
 from discord.channel import DMChannel
@@ -63,14 +67,32 @@ class Util(commands.Cog):
             await chan.send(f"```\n{m.author.name}:\n{m.content}\n```"[:2000])
         await ctx.send(f"Stopped forwarding messages.")
 
-    # x-post something to another channel.
-    @commands.command(help="Crosspost the given message to some other channel.")
-    @is_officer()
-    async def pin_it(self, ctx: commands.Context, id: typing.Optional[str]):
-        if not msg:
-            msg = (await ctx.channel.history(limit=1).flatten())[0]
-        else:
-            msg = await ctx.fetch_message(id)
+    @commands.command(
+        name="dmp",
+        help="Dump messages from your current channel to a file on your local machine.",
+    )
+    @is_admin()
+    async def dump_msgs(self, ctx: commands.Context, filename: typing.Optional[str]):
+        status = await ctx.send(f"Started downloading chat history...")
+
+        with open(
+            (
+                filename
+                or f"{ctx.channel.name or 'unknown'}-{datetime.utcnow().strftime('%m-%d-%Y-%H-%M')}"
+            ),
+            "a+",
+        ) as outfile:
+            count = 0
+            outfile.write(
+                f"Started new dump on {datetime.utcnow().strftime('%m-%d-%Y-%H-%M')}.\n---\n"
+            )
+            outfile.write("Author (Creation Date, Edit Date):\nContent\n\n")
+            async for m in ctx.history(limit=None):
+                outfile.write(
+                    f"{m.author} ({m.created_at}, {m.edited_at}):\n{m.content}\n\n"
+                )
+                count += 1
+                await status.edit(content=f"Read {count} messages to {outfile.name}")
 
     # one-time use invite
     @commands.command(
