@@ -51,7 +51,7 @@ class Util(commands.Cog):
     ):
         if not chan:
             chan = ctx.channel
-        await ctx.send(f"Forwarding DMs to {chan.name}. Send `!@stop` to stop.")
+        await ctx.send(f"Forwarding DMs to {chan.name}.")
         while True:
             m = await self.bot.wait_for(
                 "message",
@@ -60,7 +60,7 @@ class Util(commands.Cog):
             )
             if m.author == ctx.author and m.content == "!@stop":
                 break
-            await chan.send(f"```\n{m.author.name}:\n{m.content[:1500]}\n```")
+            await chan.send(f"```\n{m.author.name}:\n{m.content}\n```"[:2000])
         await ctx.send(f"Stopped forwarding messages.")
 
     # x-post something to another channel.
