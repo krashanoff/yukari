@@ -5,6 +5,7 @@ import random
 from io import StringIO
 
 import discord
+from discord.channel import DMChannel
 from discord.ext import commands
 from discord.ext.commands.core import command
 
@@ -42,13 +43,16 @@ class Util(commands.Cog):
 
     @commands.command(help="Temporarily forward DMs to another channel.")
     @is_admin()
-    async def fwd(self, ctx: commands.Context, chan: discord.TextChannel):
+    async def fwd(self, ctx: commands.Context, chan: typing.Optional[discord.TextChannel]):
+        if not chan:
+            chan = ctx.channel
         await ctx.send(f"Forwarding DMs to {chan.name}. Send `!@stop` to stop.")
         while True:
-            m = await self.bot.wait_for("message", check=lambda m: not m.guild or m.author == ctx.author)
+            m = await self.bot.wait_for("message", check=lambda m: type(m.channel) is discord.DMChannel or (type(m.channel) is discord.DMChannel and m.author == ctx.author))
             if m.author == ctx.author and m.content == "!@stop":
                 break
             await chan.send(f"```\n{m.author.name}:\n{m.content[:1500]}\n```")
+        await ctx.send(f"Stopped forwarding messages.")
     
     # x-post something to another channel.
     @commands.command(help="Crosspost the given message to some other channel.")
