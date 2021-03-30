@@ -42,25 +42,12 @@ class BotTools(commands.Cog):
     async def say(
         self,
         ctx,
-        chan: typing.Optional[discord.TextChannel],
-        user: typing.Optional[discord.User],
+        send_to: typing.Optional[typing.Union[discord.TextChannel, discord.User]],
         *,
         contents: str,
     ):
-        if chan:
-            await chan.send(contents)
-        elif user == self.bot.user:
-            await ctx.send(
-                f"I can't send a DM to myself, silly.", delete_after=TMPMSG_DEFAULT
-            )
-        elif user:
-            try:
-                await user.send(contents)
-            except AttributeError:
-                await ctx.send(
-                    f"I couldn't send the DM to the user, sorry. (つ﹏<)･ﾟ｡",
-                    delete_after=TMPMSG_DEFAULT,
-                )
+        if send_to:
+            await send_to.send(contents)
         else:
             await ctx.send(contents)
 
