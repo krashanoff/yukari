@@ -2,9 +2,9 @@ import re
 import asyncio
 from sys import flags
 import typing
-import random
 from io import StringIO
 from datetime import datetime
+import re
 
 from rich import inspect
 
@@ -15,6 +15,8 @@ from discord.ext.commands.core import command
 
 from constants import *
 from perms import *
+
+Nukable = typing.Union[discord.CategoryChannel, discord.TextChannel, discord.VoiceChannel, discord.Message, discord.Member]
 
 # General server maintenance.
 class Util(commands.Cog):
@@ -173,8 +175,8 @@ class Util(commands.Cog):
     # short info dump about a server
     @commands.command(help="Info dump about the server")
     @is_admin()
-    async def infoDump(self, ctx):
-        for c in ctx.guild.text_channels:
+    async def infoDump(self, ctx, ignore: typing.Optional[typing.List[discord.TextChannel]]):
+        for c in filter(lambda c: c not in (ignore or []), ctx.guild.text_channels):
             await ctx.send(
                 f"[{c.position}] {c.category.name if c.category else ''}/{c.name}: {c.topic}"
             )
@@ -197,66 +199,70 @@ class Util(commands.Cog):
                 count += 1
         await status.edit(content=f"Found {count} messages matching your query.")
 
-    # bulk deletion tool
-    @commands.command(name="d", help="Delete messages")
-    @is_admin()
-    async def delete(self, ctx, *args):
-        status = await ctx.send("Standby...")
+    # create lots of things
+    @commands.command(help=f"""
+Quickly create channels and categories using the provided syntax.
 
-        channels = [ctx.channel]
-        before = None
-        after = None
+Usage: {CMD_PREFIX}create [categories or channels...]
 
-        while True:
-            msg = "Welcome to the bulk-deletion tool.\n"
-            if channels != [ctx.channel]:
-                msg += f"Channels: {[ c.name for c in channels ]}\n"
-            if before:
-                msg += f"Before: {before}\n"
-            if after:
-                msg += f"After: {after}\n"
-            msg += f"React with {OK_EMOJI} to execute, {NO_EMOJI} to cancel.\n"
+catName/\((.*,)+\) = Comma-delimited channel names.
+#chan = Text channel visible to your highest current role.
+chan = Voice channel visible to your highest current role.
+chan+e = Voice channel chan that is visible to everyone.
 
-            await status.edit(content=msg)
-            await status.add_reaction(NO_EMOJI)
-            await status.add_reaction(OK_EMOJI)
+Example:
+{CMD_PREFIX}create catName/(chan1,chan2,chan3) catTwo/()
+""")
+    async def create(self, ctx, *args):
+        # TODO
+        default_perms = ctx.author.roles[-1]
 
-            try:
-                r, _ = await self.bot.wait_for(
-                    "reaction_add",
-                    timeout=TMPMSG_DEFAULT,
-                    check=lambda r, u: u == ctx.author and r.emoji in INPUT,
-                )
-            except asyncio.TimeoutError:
+        status = await ctx.send(f"New channels will be visible to members with the \"{default_perms.name}\" role by default.")
+
+        for category in args:
+            await status.edit(content=f"Now creating category `{category}`")
+
+            parts = re.findall(".*", category)
+
+            if len(parts) != 2:
+                await status.edit(content="Improperly formatted string.", delete_after=TMPMSG_DEFAULT)
+                return
+            pass
+
+    # delete lots of things
+    @commands.command(help="Delete a variety of things quickly and without remorse. If force is true, bans users instead of kicking them.")
+    @is_leo()
+    async def nuke(self, ctx, force: bool, target: typing.Union[typing.List[Nukable], Nukable]):
+        target_type = type(target)
+
+        status = await ctx.send(
+            f"Okay, I'll delete `{str(target)}`. It is of type `{target_type}`. You have {TMPMSG_DEFAULT} seconds to confirm."
+        )
+        await status.add_reaction(NO_EMOJI)
+        await status.add_reaction(OK_EMOJI)
+
+        try:
+            r, _ = await self.bot.wait_for(
+                "reaction_add",
+                timeout=TMPMSG_DEFAULT,
+                check=lambda r, u: u == ctx.author and r.emoji in INPUT,
+            )
+        except asyncio.TimeoutError:
+            await status.edit(content="Aborted!", delete_after=TMPMSG_DEFAULT)
+        else:
+            if r.emoji == NO_EMOJI:
                 await status.edit(content="Aborted!", delete_after=TMPMSG_DEFAULT)
                 return
-            else:
-                if r.emoji == OK_EMOJI:
-                    await status.edit(content="Starting deletion...")
-                    break
-                if r.emoji == NO_EMOJI:
-                    await status.edit(content="Aborted!", delete_after=TMPMSG_DEFAULT)
-                    return
-
-        for c in channels:
-            await status.edit(content=f"Deleting messages found in {c.name}")
-
-            history = [m async for m in c.history(limit=MSG_LIMIT) if m.id != status.id]
-            tasks = [
-                asyncio.gather(*[m.delete() for m in history[i : i + 100]])
-                for i in range(0, len(history), 100)
-            ]
-            count = len(tasks)
-
-            await status.edit(
-                content=f"Found {count} batches of ~100 messages. Executing."
-            )
-            for i, t in enumerate(tasks):
-                await t
-                await status.edit(content=f"Completed batch {i+1}/{count}.")
-
-            await status.edit(content=f"Done.")
-
-        await status.edit(
-            content="Transaction completed successfully.", delete_after=TMPMSG_DEFAULT
-        )
+            if r.emoji == OK_EMOJI:
+                await status.edit(content="Aight.")
+        
+        if target_type == discord.CategoryChannel:
+            for c in target.channels:
+                await c.delete(reason=f"Nuked by {ctx.author}.")
+            await target.delete(reason=f"Nuked by {ctx.author}.")
+        elif target_type == (discord.TextChannel or discord.VoiceChannel or discord.Message):
+            await target.delete(reason=f"Nuked by {ctx.author}")
+        elif target_type == discord.Member:
+            await (target.ban if force else target.kick)(reason=f"Nuked by {ctx.author}")
+        
+        await status.edit(content="It is done.", delete_after=TMPMSG_DEFAULT)
