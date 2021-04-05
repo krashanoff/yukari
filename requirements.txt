@@ -1,4 +1,4 @@
-aiohttp==3.7.4
+aiohttp==3.6.3
 appdirs==1.4.3
 astroid==2.4.2
 async-timeout==3.0.1
@@ -12,7 +12,6 @@ click==7.1.2
 colorama==0.4.3
 commonmark==0.9.1
 contextlib2==0.6.0
-dataclasses==0.8
 discord.py==1.4.1
 distlib==0.3.0
 distro==1.4.0

@@ -205,34 +205,41 @@ Quickly create channels and categories using the provided syntax.
 
 Usage: {CMD_PREFIX}create [categories or channels...]
 
-catName/\((.*,)+\) = Comma-delimited channel names.
+catName/(.*,)+(.*) = Comma-delimited channel names.
 #chan = Text channel visible to your highest current role.
 chan = Voice channel visible to your highest current role.
-chan+e = Voice channel chan that is visible to everyone.
+chan+r = Voice channel 'chan' that is visible to everyone with
+         role 'r'.
 
 Example:
-{CMD_PREFIX}create catName/(chan1,chan2,chan3) catTwo/()
+{CMD_PREFIX}create catName/(#chan1,chan2,chan3) catTwo
 """)
     async def create(self, ctx, *args):
-        # TODO
+        # Acquire user's highest ranked role.
         default_perms = ctx.author.roles[-1]
 
         status = await ctx.send(f"New channels will be visible to members with the \"{default_perms.name}\" role by default.")
 
-        for category in args:
-            await status.edit(content=f"Now creating category `{category}`")
+        for info in args:
+            await status.edit(content=f"Now creating category `{info}`")
 
-            parts = re.findall(".*", category)
-
-            if len(parts) != 2:
-                await status.edit(content="Improperly formatted string.", delete_after=TMPMSG_DEFAULT)
-                return
-            pass
+            info = info.split('/')
+            category_name = ''.join(info[:-1])
+            channels = [ name for name in info[-1].split(',') ]
+            
+            cat = await ctx.guild.create_category(category_name)
+            for name in channels:
+                if name.startswith('#'):
+                    await cat.create_text_channel(name)
+                else:
+                    await cat.create_voice_channel(name)
+                
+        await status.edit(content="Created category and channels.", delete_after=TMPMSG_DEFAULT)
 
     # delete lots of things
-    @commands.command(help="Delete a variety of things quickly and without remorse. If force is true, bans users instead of kicking them.")
+    @commands.command(help="Delete a variety of things quickly and without remorse.")
     @is_leo()
-    async def nuke(self, ctx, force: bool, target: typing.Union[typing.List[Nukable], Nukable]):
+    async def nuke(self, ctx, target: Nukable):
         target_type = type(target)
 
         status = await ctx.send(
@@ -263,6 +270,6 @@ Example:
         elif target_type == (discord.TextChannel or discord.VoiceChannel or discord.Message):
             await target.delete(reason=f"Nuked by {ctx.author}")
         elif target_type == discord.Member:
-            await (target.ban if force else target.kick)(reason=f"Nuked by {ctx.author}")
+            await target.kick(reason=f"Nuked by {ctx.author}")
         
         await status.edit(content="It is done.", delete_after=TMPMSG_DEFAULT)
