@@ -16,7 +16,13 @@ from discord.ext.commands.core import command
 from constants import *
 from perms import *
 
-Nukable = typing.Union[discord.CategoryChannel, discord.TextChannel, discord.VoiceChannel, discord.Message, discord.Member]
+Nukable = typing.Union[
+    discord.CategoryChannel,
+    discord.TextChannel,
+    discord.VoiceChannel,
+    discord.Message,
+    discord.Member,
+]
 
 # General server maintenance.
 class Util(commands.Cog):
@@ -175,7 +181,9 @@ class Util(commands.Cog):
     # short info dump about a server
     @commands.command(help="Info dump about the server")
     @is_admin()
-    async def infoDump(self, ctx, ignore: typing.Optional[typing.List[discord.TextChannel]]):
+    async def infoDump(
+        self, ctx, ignore: typing.Optional[typing.List[discord.TextChannel]]
+    ):
         for c in filter(lambda c: c not in (ignore or []), ctx.guild.text_channels):
             await ctx.send(
                 f"[{c.position}] {c.category.name if c.category else ''}/{c.name}: {c.topic}"
@@ -200,7 +208,8 @@ class Util(commands.Cog):
         await status.edit(content=f"Found {count} messages matching your query.")
 
     # create lots of things
-    @commands.command(help=f"""
+    @commands.command(
+        help=f"""
 Quickly create channels and categories using the provided syntax.
 
 Usage: {CMD_PREFIX}create [categories or channels...]
@@ -212,29 +221,34 @@ chan+r = Voice channel 'chan' that is visible to everyone with
          role 'r'.
 
 Example:
-{CMD_PREFIX}create catName/(#chan1,chan2,chan3) catTwo
-""")
+{CMD_PREFIX}create catName/#chan1,chan2,chan3 catTwo
+"""
+    )
     async def create(self, ctx, *args):
         # Acquire user's highest ranked role.
         default_perms = ctx.author.roles[-1]
 
-        status = await ctx.send(f"New channels will be visible to members with the \"{default_perms.name}\" role by default.")
+        status = await ctx.send(
+            f'New channels will be visible to members with the "{default_perms.name}" role by default.'
+        )
 
         for info in args:
             await status.edit(content=f"Now creating category `{info}`")
 
-            info = info.split('/')
-            category_name = ''.join(info[:-1])
-            channels = [ name for name in info[-1].split(',') ]
-            
+            info = info.split("/")
+            category_name = "".join(info[:-1])
+            channels = [name for name in info[-1].split(",")]
+
             cat = await ctx.guild.create_category(category_name)
             for name in channels:
-                if name.startswith('#'):
+                if name.startswith("#"):
                     await cat.create_text_channel(name)
                 else:
                     await cat.create_voice_channel(name)
-                
-        await status.edit(content="Created category and channels.", delete_after=TMPMSG_DEFAULT)
+
+        await status.edit(
+            content="Created category and channels.", delete_after=TMPMSG_DEFAULT
+        )
 
     # delete lots of things
     @commands.command(help="Delete a variety of things quickly and without remorse.")
@@ -262,14 +276,16 @@ Example:
                 return
             if r.emoji == OK_EMOJI:
                 await status.edit(content="Aight.")
-        
+
         if target_type == discord.CategoryChannel:
             for c in target.channels:
                 await c.delete(reason=f"Nuked by {ctx.author}.")
             await target.delete(reason=f"Nuked by {ctx.author}.")
-        elif target_type == (discord.TextChannel or discord.VoiceChannel or discord.Message):
+        elif target_type == (
+            discord.TextChannel or discord.VoiceChannel or discord.Message
+        ):
             await target.delete(reason=f"Nuked by {ctx.author}")
         elif target_type == discord.Member:
             await target.kick(reason=f"Nuked by {ctx.author}")
-        
-        await status.edit(content="It is done.", delete_after=TMPMSG_DEFAULT)
+
+        await status.edit(content="It is done.")
