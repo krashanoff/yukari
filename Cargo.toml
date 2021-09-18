@@ -1,0 +1,11 @@
+[package]
+name = "wizard"
+version = "0.1.0"
+authors = ["krashanoff <leo@krashanoff.com>"]
+edition = "2018"
+
+[dependencies]
+async-trait = "0.1"
+tokio = { version = "1.11", features = ["full"] }
+songbird = { version = "0.2", features = ["builtin-queue", "serenity-rustls"] }
+serenity = { version = "0.10", features = ["voice"] }
