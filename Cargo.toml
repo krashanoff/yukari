@@ -8,4 +8,4 @@ edition = "2018"
 async-trait = "0.1"
 tokio = { version = "1.11", features = ["full"] }
 songbird = { version = "0.2", features = ["builtin-queue", "serenity-rustls"] }
-serenity = { version = "0.10", features = ["voice"] }
+serenity = { version = "0.10", features = ["voice", "unstable_discord_api"] }

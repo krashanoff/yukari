@@ -7,6 +7,9 @@ use serenity::framework::standard::{
     CommandResult, StandardFramework,
 };
 use serenity::model::channel::Message;
+use serenity::model::interactions::application_command::{
+    ApplicationCommand, ApplicationCommandOptionType,
+};
 use serenity::model::prelude::*;
 use songbird::input::Restartable;
 use songbird::SerenityInit;
@@ -14,7 +17,7 @@ use songbird::SerenityInit;
 use std::env;
 
 #[group]
-#[commands(play, repeat_for, repeat_off, setvol, pause, resume, leave)]
+#[commands(play, queue, repeat_for, repeat_off, setvol, pause, resume, leave)]
 #[summary = "Commands for playing music with friends!"]
 struct Audio;
 
@@ -23,6 +26,24 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, ctx: Context, r: Ready) {
+        let commands = ApplicationCommand::set_global_application_commands(&ctx, |commands| {
+            commands.create_application_command(|command| {
+                command.name("play").create_option(|option| {
+                    option
+                        .name("uri")
+                        .description("URI of some media source to stream.")
+                        .kind(ApplicationCommandOptionType::String)
+                        .required(true)
+                })
+            })
+        })
+        .await;
+
+        println!(
+            "I now have the following global slash commands: {:#?}",
+            commands
+        );
+
         ctx.set_presence(
             Some(Activity::playing("listening to music!")),
             OnlineStatus::Online,
@@ -30,6 +51,36 @@ impl EventHandler for Handler {
         .await;
 
         println!("Logged on with {}#{}", r.user.name, r.user.discriminator);
+    }
+
+    async fn interaction_create(&self, ctx: Context, interaction: Interaction) {
+        if let Interaction::ApplicationCommand(command) = interaction {
+            let content = match command.data.name.as_str() {
+                "play" => {
+                    let options = command
+                        .data
+                        .options
+                        .get(0)
+                        .expect("Expected URI")
+                        .resolved
+                        .as_ref()
+                        .expect("Expected URI");
+                    "".to_string()
+                }
+                _ => "not implemented :(".to_string(),
+            };
+
+            if let Err(why) = command
+                .create_interaction_response(&ctx.http, |response| {
+                    response
+                        .kind(InteractionResponseType::ChannelMessageWithSource)
+                        .interaction_response_data(|message| message.content(content))
+                })
+                .await
+            {
+                println!("Cannot respond to slash command: {}", why);
+            }
+        }
     }
 }
 
@@ -66,10 +117,7 @@ async fn main() {
 
 #[hook]
 async fn before(_ctx: &Context, msg: &Message, command_name: &str) -> bool {
-    println!(
-        "Got command '{}' by user '{}'",
-        command_name, msg.author.id
-    );
+    println!("Got command '{}' by user '{}'", command_name, msg.author.id);
     true
 }
 
@@ -137,6 +185,33 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             _ => {}
         }
     }
+
+    Ok(())
+}
+
+#[command]
+async fn queue(ctx: &Context, msg: &Message) -> CommandResult {
+    let bird = songbird::get(ctx)
+        .await
+        .expect("failed to get songbird client");
+    let call_lock = bird.get(msg.guild_id.unwrap()).unwrap().clone();
+
+    let call = call_lock.lock().await;
+
+    msg.reply(
+        ctx,
+        format!(
+            "{}",
+            call.queue()
+                .current_queue()
+                .iter()
+                .map(|t| t.metadata().source_url.clone())
+                .map(|s| s.unwrap_or("".to_string()))
+                .collect::<Vec<String>>()
+                .join("\n")
+        ),
+    )
+    .await?;
 
     Ok(())
 }
