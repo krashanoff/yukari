@@ -1,4 +1,6 @@
 use async_trait::async_trait;
+use clap::{App, Arg};
+use serde::{Deserialize, Serialize};
 use serenity::{
     client::{Client, Context, EventHandler},
     framework::standard::{buckets::LimitedFor, macros::hook, StandardFramework},
@@ -6,11 +8,19 @@ use serenity::{
 };
 use songbird::SerenityInit;
 
-use std::env;
+use std::{fs::OpenOptions, path::PathBuf};
 
 // We keep our command archetypes organized by module.
 mod audio;
 mod util;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Config {
+    token: String,
+    owner: String,
+    credentials: Option<PathBuf>,
+    spreadsheet: Option<String>,
+}
 
 struct Handler;
 
@@ -29,6 +39,27 @@ impl EventHandler for Handler {
 
 #[tokio::main]
 async fn main() {
+    let matches = App::new("yukari")
+        .arg(
+            Arg::with_name("config")
+                .short("c")
+                .long("config")
+                .value_name("PATH")
+                .required(true)
+                .help("Path to config file"),
+        )
+        .get_matches();
+
+    let config: Config = serde_json::from_reader(
+        OpenOptions::new()
+            .read(true)
+            .write(false)
+            .create(false)
+            .open(matches.value_of("config").expect("config path is required"))
+            .expect("failed to open config"),
+    )
+    .expect("failed to deserialize config");
+
     let framework = StandardFramework::new()
         .configure(|c| c.prefix("-").delimiters(vec![", ", " "]))
         .before(before)
@@ -45,8 +76,7 @@ async fn main() {
         .group(&util::UTILITY_GROUP);
 
     // Login with a bot token from the environment
-    let token = env::var("DISCORD_TOKEN").expect("token");
-    let mut client = Client::builder(token)
+    let mut client = Client::builder(config.token)
         .event_handler(Handler)
         .framework(framework)
         .register_songbird()

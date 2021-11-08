@@ -1,0 +1,6 @@
+{
+  "token": "your bot token",
+  "owner": "your username",
+  "credentials": "./path/to/your/service_account.json",
+  "spreadsheet": "name of your spreadsheet"
+}
