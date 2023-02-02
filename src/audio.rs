@@ -5,12 +5,16 @@ use serenity::{
         Args, CommandResult,
     },
     model::{channel::Message, prelude::*},
+    utils::ArgumentConvert,
 };
 use songbird::input::Restartable;
 
 #[group]
-#[commands(play, repeat_for, repeat_off, setvol, pause, resume, leave, queue)]
+#[commands(
+    play, play_now, repeat_for, repeat_off, set_vol, pause, resume, leave, queue, skip
+)]
 #[summary = "Commands for playing music with friends!"]
+#[only_in(guilds)]
 struct Audio;
 
 /// Retrieve the guild and channel ID of the user who invoked the given command.
@@ -18,13 +22,7 @@ async fn user_voice_state(
     ctx: &Context,
     msg: &Message,
 ) -> Result<(GuildId, ChannelId), &'static str> {
-    match msg
-        .guild(ctx)
-        .await
-        .unwrap()
-        .voice_states
-        .get(&msg.author.id)
-    {
+    match msg.guild(ctx).unwrap().voice_states.get(&msg.author.id) {
         Some(&VoiceState {
             guild_id: Some(guild_id),
             channel_id: Some(channel_id),
@@ -34,50 +32,119 @@ async fn user_voice_state(
     }
 }
 
+/// Add a track to the queue. Joins the bot to your current voice channel if it
+/// isn't already connected.
 #[command]
-/// Play some audio source or add it to the queue.
 async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    msg.reply(ctx, "Joining your channel now!").await?;
-    let (guild_id, channel_id) = match user_voice_state(ctx, msg).await {
-        Ok(s) => s,
+    let url = match args.single::<String>() {
+        Ok(url) => url,
         Err(_) => {
-            msg.reply(
-                ctx,
-                format!("I couldn't find the channel you're in! Try leaving then joining again!"),
-            )
-            .await?;
             return Ok(());
         }
     };
 
-    let bird = songbird::get(ctx)
-        .await
-        .expect("failed to get songbird client");
+    let guild = msg.guild(&ctx.cache).unwrap();
+    let guild_id = guild.id;
 
-    if let None = bird.get(guild_id) {
-        match bird.join(guild_id, channel_id).await {
-            (call_lock, Ok(())) => {
-                let mut call = call_lock.lock().await;
+    let channel_id = guild
+        .voice_states
+        .get(&msg.author.id)
+        .and_then(|voice_state| voice_state.channel_id);
 
-                for uri in args.iter::<String>() {
-                    call.enqueue_source(
-                        Restartable::ytdl(uri.unwrap(), true)
-                            .await
-                            .expect("failed to queue")
-                            .into(),
-                    );
-                }
-            }
-            _ => {}
+    let connect_to = match channel_id {
+        Some(channel) => channel,
+        None => {
+            return Ok(());
         }
+    };
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+    let _handler = manager.join(guild_id, connect_to).await;
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+
+        let source = match Restartable::ytdl(url, true).await {
+            Ok(source) => source,
+            Err(why) => {
+                println!("Err starting source: {:?}", why);
+                return Ok(());
+            }
+        };
+
+        if handler.queue().is_empty() {
+            msg.reply(ctx, format!("Playing as requested!")).await;
+        } else {
+            msg.reply(ctx, format!("Queued at position {}", handler.queue().len()))
+                .await;
+        }
+
+        handler.enqueue_source(source.into());
+    } else {
+        println!("err acquiring lock");
     }
+
     Ok(())
 }
 
+/// Play a track **immediately**.
 #[command]
-#[aliases(loop)]
+async fn play_now(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let url = match args.single::<String>() {
+        Ok(url) => url,
+        Err(_) => {
+            return Ok(());
+        }
+    };
+
+    let guild = msg.guild(&ctx.cache).unwrap();
+    let guild_id = guild.id;
+
+    let channel_id = guild
+        .voice_states
+        .get(&msg.author.id)
+        .and_then(|voice_state| voice_state.channel_id);
+
+    let connect_to = match channel_id {
+        Some(channel) => channel,
+        None => {
+            return Ok(());
+        }
+    };
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+    let _handler = manager.join(guild_id, connect_to).await;
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+
+        handler.queue().stop();
+        let source = match Restartable::ytdl(url, true).await {
+            Ok(source) => source,
+            Err(why) => {
+                println!("Err starting source: {:?}", why);
+                return Ok(());
+            }
+        };
+
+        handler.enqueue_source(source.into());
+    } else {
+        println!("err acquiring lock");
+    }
+
+    play(ctx, msg, args).await
+}
+
 /// Loop the currently playing source for some set number of times, or
 /// indefinitely.
+#[command]
+#[aliases(loop, repeatOne)]
 async fn repeat_for(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let times = match args.single::<usize>() {
         Ok(u) => Some(u),
@@ -98,7 +165,9 @@ async fn repeat_for(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
         let call = call_lock.lock().await;
         match (times, call.queue().current()) {
             (_, None) => {
-                msg.reply(ctx, "Nothing is playing!").await;
+                msg.reply(ctx, "Nothing is playing!")
+                    .await
+                    .expect("failed to send message");
             }
             (None, Some(track)) => {
                 track.enable_loop();
@@ -112,6 +181,7 @@ async fn repeat_for(ctx: &Context, msg: &Message, mut args: Args) -> CommandResu
     Ok(())
 }
 
+/// Stop looping the current track.
 #[command]
 #[aliases(stoploop, noloop)]
 async fn repeat_off(ctx: &Context, msg: &Message) -> CommandResult {
@@ -134,9 +204,10 @@ async fn repeat_off(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-#[command]
 /// Set the volume of the current streaming source.
-async fn setvol(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+#[command]
+#[aliases(setvol, vol)]
+async fn set_vol(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let volume = args.single().unwrap();
 
     let bird = songbird::get(ctx)
@@ -144,10 +215,11 @@ async fn setvol(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         .expect("failed to get songbird client");
     if let Some(call_lock) = bird.get(msg.guild_id.expect("need guild ID")) {
         let call = call_lock.lock().await;
-        call.queue()
-            .current()
-            .expect("nothing playing")
-            .set_volume(volume);
+        if let Some(current) = call.queue().current() {
+            current.set_volume(volume).expect("failed to set volume");
+        }
+        msg.reply(ctx, format!(":sound: Set volume to {}", volume))
+            .await;
     }
     Ok(())
 }
@@ -165,8 +237,8 @@ async fn pause(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-#[command]
 /// Resume the current stream.
+#[command]
 async fn resume(ctx: &Context, msg: &Message) -> CommandResult {
     let bird = songbird::get(ctx)
         .await
@@ -178,15 +250,26 @@ async fn resume(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+/// Leaves the voice channel.
 #[command]
 async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
     let bird = songbird::get(ctx)
         .await
         .expect("failed to get songbird client");
+    if let Some(call_lock) = bird.get(msg.guild_id.expect("need guild ID")) {
+        let call = call_lock.lock().await;
+        call.queue().stop();
+    }
     bird.leave(msg.guild_id.expect("need guild ID")).await;
+    msg.react(
+        ctx,
+        Emoji::convert(ctx, None, None, ":wave:").await.unwrap(),
+    )
+    .await;
     Ok(())
 }
 
+/// Prints out the current song queue.
 #[command]
 async fn queue(ctx: &Context, msg: &Message) -> CommandResult {
     let bird = songbird::get(ctx)
@@ -194,6 +277,12 @@ async fn queue(ctx: &Context, msg: &Message) -> CommandResult {
         .expect("failed to get songbird client");
     if let Some(call_lock) = bird.get(msg.guild_id.expect("need guild ID")) {
         let call = call_lock.lock().await;
+
+        if call.queue().is_empty() {
+            msg.reply(ctx, "Your queue is currently empty!").await;
+            return Ok(());
+        }
+
         if let Err(e) = msg
             .reply(
                 ctx,
@@ -202,13 +291,43 @@ async fn queue(ctx: &Context, msg: &Message) -> CommandResult {
                     .iter()
                     .fold(String::new(), |acc, t| {
                         let metadata = t.metadata();
-                        format!("{} {:?} {:?}", acc, metadata.artist, metadata.title)
+                        format!(
+                            "{} {:?} {:?}\n",
+                            acc,
+                            metadata
+                                .artist
+                                .clone()
+                                .unwrap_or_else(|| "Unknown".to_string()),
+                            metadata
+                                .title
+                                .clone()
+                                .unwrap_or_else(|| "Unknown".to_string())
+                        )
                     }),
             )
             .await
         {
             eprintln!("Failed to reply: {}", e);
         }
+    }
+    Ok(())
+}
+
+/// Skips the current track.
+#[command]
+async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
+    let bird = songbird::get(ctx)
+        .await
+        .expect("failed to get songbird client");
+    if let Some(call_lock) = bird.get(msg.guild_id.expect("need guild ID")) {
+        let call = call_lock.lock().await;
+
+        if call.queue().is_empty() {
+            msg.reply(ctx, "Your queue is currently empty!").await;
+            return Ok(());
+        }
+
+        call.queue().dequeue(0).unwrap();
     }
     Ok(())
 }

@@ -16,11 +16,10 @@ struct Utility;
 #[aliases(oti)]
 #[owners_only]
 async fn one_time_invite(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
-    let timeout = args.single().unwrap();
+    let timeout = args.single().unwrap_or_else(|_| 86400);
     let invite = ctx
         .cache
         .guild_channel(msg.channel_id)
-        .await
         .unwrap()
         .create_invite(ctx, |i| i.max_uses(1).max_age(timeout))
         .await
@@ -36,11 +35,18 @@ async fn one_time_invite(ctx: &Context, msg: &Message, mut args: Args) -> Comman
 #[owners_only]
 async fn rm(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let code = args.single::<String>().unwrap();
-    let invites = msg.guild(ctx).await.unwrap().invites(ctx).await.unwrap();
-    for invite in invites {
+    let invites = msg.guild(ctx).unwrap().invites(ctx).await.unwrap();
+    for invite in &invites {
         if invite.code == code {
             invite.delete(ctx).await;
         }
     }
+    msg.reply(
+        ctx,
+        format!(
+            "Removed {}",
+            invites.iter().cloned().map(|i| i.code).collect::<String>()
+        ),
+    ).await;
     Ok(())
 }
