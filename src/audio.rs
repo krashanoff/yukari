@@ -17,21 +17,6 @@ use songbird::input::Restartable;
 #[only_in(guilds)]
 struct Audio;
 
-/// Retrieve the guild and channel ID of the user who invoked the given command.
-async fn user_voice_state(
-    ctx: &Context,
-    msg: &Message,
-) -> Result<(GuildId, ChannelId), &'static str> {
-    match msg.guild(ctx).unwrap().voice_states.get(&msg.author.id) {
-        Some(&VoiceState {
-            guild_id: Some(guild_id),
-            channel_id: Some(channel_id),
-            ..
-        }) => Ok((guild_id, channel_id)),
-        _ => Err("fail"),
-    }
-}
-
 /// Add a track to the queue. Joins the bot to your current voice channel if it
 /// isn't already connected.
 #[command]
@@ -327,7 +312,8 @@ async fn skip(ctx: &Context, msg: &Message) -> CommandResult {
             return Ok(());
         }
 
-        call.queue().dequeue(0).unwrap();
+        call.queue().current().unwrap().stop();
+        msg.reply(ctx, "Skipping to next track in queue").await;
     }
     Ok(())
 }
